@@ -29,7 +29,7 @@ class ParallelContext:
         return (self.rank + self.step) % self.world_size
 
     @property
-    def unified_offset(self) -> int:
+    def master_offset(self) -> int:
         return self.step % self.world_size
 
 

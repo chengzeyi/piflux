@@ -82,7 +82,7 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         assert ctx is not None
         world_size = ctx.world_size
         offset = ctx.offset
-        unified_offset = ctx.unified_offset
+        master_offset = ctx.master_offset
 
         hidden_states = hidden_states.chunk(ctx.world_size, dim=1)[offset]
         img_ids = img_ids.chunk(ctx.world_size, dim=0)[offset]
@@ -98,7 +98,7 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
 
         dist.all_gather(gathered_samples, sample)
 
-        gathered_samples = gathered_samples[world_size - unified_offset:] + gathered_samples[:world_size - unified_offset]
+        gathered_samples = gathered_samples[world_size - master_offset:] + gathered_samples[:world_size - master_offset]
         torch.cat(gathered_samples, dim=1, out=gathered_sample)
 
         ctx.next_step()
