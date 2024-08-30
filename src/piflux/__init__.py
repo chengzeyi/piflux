@@ -29,6 +29,10 @@ def get_rank() -> int:
     return dist.get_rank()
 
 
+def is_master() -> bool:
+    return get_rank() == 0
+
+
 def create_context() -> context.ParallelContext:
     world_size = get_world_size()
     rank = get_rank()

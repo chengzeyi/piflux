@@ -257,50 +257,52 @@ def main():
         output = pipe(**kwarg_inputs)
         end = time.time()
 
-        if hasattr(output, "images"):
-            output_images = output.images
-            if args.print_output:
-                from piflux.utils.term_image import print_image
+        if not use_ddp or piflux.is_master():
+            if hasattr(output, "images"):
+                output_images = output.images
+                if args.print_output:
+                    from piflux.utils.term_image import print_image
 
-                for image in output_images:
-                    print_image(image, max_width=80)
-            if args.display_output:
-                from piflux.utils.term_image import display_image
+                    for image in output_images:
+                        print_image(image, max_width=80)
+                if args.display_output:
+                    from piflux.utils.term_image import display_image
 
-                for image in output_images:
-                    display_image(image, width="50%")
-        elif hasattr(output, "frames"):
-            output_frames = output.frames
-            if args.print_output:
-                from piflux.utils.term_image import print_image
+                    for image in output_images:
+                        display_image(image, width="50%")
+            elif hasattr(output, "frames"):
+                output_frames = output.frames
+                if args.print_output:
+                    from piflux.utils.term_image import print_image
 
-                for frames in output_frames:
-                    print_image(frames[0], max_width=80)
-            if args.display_output:
-                from piflux.utils.term_image import display_image
+                    for frames in output_frames:
+                        print_image(frames[0], max_width=80)
+                if args.display_output:
+                    from piflux.utils.term_image import display_image
 
-                for frames in output_frames:
-                    display_image(frames[0], width="50%")
+                    for frames in output_frames:
+                        display_image(frames[0], width="50%")
 
-        print(f"Inference time: {end - begin:.3f}s")
-        iter_per_sec = iter_profiler.get_iter_per_sec()
-        if iter_per_sec is not None:
-            print(f"Iterations per second: {iter_per_sec:.3f}")
+            print(f"Inference time: {end - begin:.3f}s")
+            iter_per_sec = iter_profiler.get_iter_per_sec()
+            if iter_per_sec is not None:
+                print(f"Iterations per second: {iter_per_sec:.3f}")
 
-    peak_mem = torch.cuda.max_memory_allocated()
-    print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
+    if not use_ddp or piflux.is_master():
+        peak_mem = torch.cuda.max_memory_allocated()
+        print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
 
-    if args.output is not None:
-        if hasattr(output, "images"):
-            output.images[0].save(args.output)
-        elif hasattr(output, "frames"):
-            from diffusers.utils import export_to_video
+        if args.output is not None:
+            if hasattr(output, "images"):
+                output.images[0].save(args.output)
+            elif hasattr(output, "frames"):
+                from diffusers.utils import export_to_video
 
-            export_to_video(output.frames[0], args.output, fps=args.fps)
+                export_to_video(output.frames[0], args.output, fps=args.fps)
+            else:
+                raise ValueError(f"Cannot handle the output type: {type(output)}")
         else:
-            raise ValueError(f"Cannot handle the output type: {type(output)}")
-    else:
-        print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
+            print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
 
     if use_ddp:
         piflux.cleanup()
