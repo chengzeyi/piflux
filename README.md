@@ -30,7 +30,7 @@ pre-commit run --all-files
 ### Run the example
 
 ```bash
-torchrun --nproc_per_node=2 examples/run_flux.py --print-output --seed 0
+torchrun --nproc_per_node=2 examples/run_flux.py --print-output
 ```
 
 ## Thanks
