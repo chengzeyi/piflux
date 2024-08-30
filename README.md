@@ -1,10 +1,10 @@
 # PIFLUX
 
-Parallel inference for `black-forest-labs`' [`FLUX`](https://huggingface.co/black-forest-labs/FLUX.1-schnell) model.
+Parallel inference for `black-forest-labs`' [`FLUX`](https://huggingface.co/black-forest-labs/FLUX.1-dev) model.
 
 ## Description
 
-**PIFLUX** is a parallel inference optimization library for `black-forest-labs`' [`FLUX`](https://huggingface.co/black-forest-labs/FLUX.1-schnell) model. It works with `torch.distributed` to utilize more than 1 NVIDIA GPU to parallelize the inference to reduce the time needed for generating one image.
+**PIFLUX** is a parallel inference optimization library for `black-forest-labs`' [`FLUX`](https://huggingface.co/black-forest-labs/FLUX.1-dev) model. It works with `torch.distributed` to utilize more than 1 NVIDIA GPU to parallelize the inference. So that the time needed for generating one image can be reduced more.
 
 This library is only for demonstrative perpose and is not intended for production use. Whether it can be combined with other optimization techniques like `torch.compile` is not tested.
 
@@ -32,3 +32,7 @@ pre-commit run --all-files
 ```bash
 torchrun --nproc_per_node=2 examples/run_flux.py --print-output --seed 0
 ```
+
+## Thanks
+
+- [xDiT](https://github.com/xdit-project/xDiT) for the [PipeFusion](https://github.com/xdit-project/xDiT/blob/main/docs/methods/pipefusion.md) parallel method.
