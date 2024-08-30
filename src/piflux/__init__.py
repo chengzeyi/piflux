@@ -76,10 +76,12 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
     def new_forward(self, hidden_states: torch.Tensor, *args, img_ids: torch.Tensor = None, **kwargs):
         ctx = context.current_context
         assert ctx is not None
-        rank = ctx.rank
+        world_size = ctx.world_size
+        offset = ctx.offset
+        unified_offset = ctx.unified_offset
 
-        hidden_states = hidden_states.chunk(ctx.world_size, dim=1)[rank]
-        img_ids = img_ids.chunk(ctx.world_size, dim=0)[rank]
+        hidden_states = hidden_states.chunk(ctx.world_size, dim=1)[offset]
+        img_ids = img_ids.chunk(ctx.world_size, dim=0)[offset]
 
         with DistributedAttentionMode():
             output = original_forward(hidden_states, *args, img_ids=img_ids, **kwargs)
@@ -91,6 +93,8 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         gathered_samples = context.get_buffer_list("transformer_forward_gathered_samples", sample)
 
         dist.all_gather(gathered_samples, sample)
+
+        gathered_samples = gathered_samples[world_size - unified_offset:] + gathered_samples[:world_size - unified_offset]
         torch.cat(gathered_samples, dim=1, out=gathered_sample)
 
         ctx.next_step()

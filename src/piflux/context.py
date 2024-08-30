@@ -20,13 +20,21 @@ class ParallelContext:
 
     step: int = 0
 
-    def next_step(self):
+    def next_step(self) -> None:
         self.step += 1
         self.counters.clear()
 
+    @property
+    def offset(self) -> int:
+        return (self.rank + self.step) % self.world_size
+
+    @property
+    def unified_offset(self) -> int:
+        return self.step % self.world_size
+
 
 @contextlib.contextmanager
-def patch_current_context(new_context: ParallelContext):
+def patch_current_context(new_context: ParallelContext) -> None:
     global current_context
     old_context = current_context
     current_context = new_context

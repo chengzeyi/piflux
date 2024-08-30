@@ -27,8 +27,15 @@ class DistributedAttentionMode(TorchFunctionMode):
             gathered_keys = context.get_buffer_list(f"scaled_dot_product_attention_keys_{idx}", key)
             gathered_values = context.get_buffer_list(f"scaled_dot_product_attention_values_{idx}", value)
 
-            dist.all_gather(gathered_keys, key)
-            dist.all_gather(gathered_values, value)
+            step = ctx.step
+            offset = ctx.offset
+
+            if step == 0:
+                dist.all_gather(gathered_keys, key)
+                dist.all_gather(gathered_values, value)
+            else:
+                gathered_keys[offset] = key
+                gathered_values[offset] = value
 
             key = torch.cat(gathered_keys, dim=2)
             value = torch.cat(gathered_values, dim=2)
