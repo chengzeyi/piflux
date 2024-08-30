@@ -40,6 +40,22 @@ def patch_pipe(pipe: FluxPipeline) -> None:
     assert isinstance(pipe, FluxPipeline)
     patch_transformer(pipe.transformer)
 
+    original_prepare_latents = pipe.prepare_latents
+
+    @functools.wraps(pipe.prepare_latents.__func__)
+    def new_prepare_latents(self, *args, **kwargs):
+        ctx = context.current_context
+        assert ctx is not None
+
+        latents, latent_image_ids = original_prepare_latents(*args, **kwargs)
+        latents = latents.contiguous()
+        gathered_latents = context.get_buffer_list("pipe_prepare_latents_gathered_latents", latents)
+        dist.all_gather(gathered_latents, latents)
+        latents = gathered_latents[0]
+        return latents, latent_image_ids
+
+    pipe.prepare_latents = new_prepare_latents.__get__(pipe)
+
     original_call = pipe.__class__.__call__
 
     @functools.wraps(original_call)
@@ -69,6 +85,7 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
             output = original_forward(hidden_states, *args, img_ids=img_ids, **kwargs)
         return_dict = not isinstance(output, tuple)
         sample = output[0]
+        sample = sample.contiguous()
 
         gathered_sample = context.get_buffer("transformer_forward_gathered_sample", sample, dim=1)
         gathered_samples = context.get_buffer_list("transformer_forward_gathered_samples", sample)
