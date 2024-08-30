@@ -12,7 +12,7 @@ This library is only for demonstrative perpose and is not intended for productio
 
 ```bash
 git clone https://github.com/chengzeyi/piflux.git
-cd xelerate
+cd piflux
 git submodule update --init --recursive
 
 pip3 install packaging wheel 'setuptools>=64,<70' 'setuptools_scm>=8'
