@@ -12,7 +12,7 @@ world_size = int(os.environ.get("PIFLUX_WORLD_SIZE", "-1"))
 
 
 class dist:
-    backend = "nccl"
+    backend = os.environ.get("PIFLUX_DIST_BACKEND")
 
 
 try:
