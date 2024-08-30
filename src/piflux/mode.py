@@ -49,7 +49,7 @@ class DistributedAttentionMode(TorchFunctionMode):
 
 
 def get_arg(args, kwargs, *field):
-    if field == 1:
+    if len(field) == 1:
         if isinstance(field, int):
             if field < len(args):
                 return args[field]
