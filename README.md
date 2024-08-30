@@ -34,6 +34,13 @@ N_GPUS=2
 torchrun --nproc_per_node=$N_GPUS examples/run_flux.py --print-output
 ```
 
+## How it works
+
+`piflux` replicates the model on each GPU that it uses. Its working state is partitioned into two parts:
+
+1. During the first inference step, the input latent is divided into N parts, where N is the number of GPUs. Each part is sent to a different GPU. The model is then run on each GPU with its corresponding input part. The output noise prediction is then collected and concatenated to form the final output. When `torch.nn.functional.scaled_dot_product_attention` is called, we call all `gather` to get the full KV and store them into a cache.
+2. In the remaining inference steps, we don't need to call `gather` to get the full KV. Instead, we circle through the the input latent parts and assign them to different GPUs. Therefore, when `torch.nn.functional.scaled_dot_product_attention` is called, we can use the cached KV from the previous steps and update different parts of the cached KV periodically. The output noise prediction is then collected and concatenated to form the final output.
+
 ## Thanks
 
 - [xDiT](https://github.com/xdit-project/xDiT) for the [PipeFusion](https://github.com/xdit-project/xDiT/blob/main/docs/methods/pipefusion.md) parallel method.
