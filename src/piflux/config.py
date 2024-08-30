@@ -17,10 +17,11 @@ _save_config_ignore = {
     # workaround: "Can't pickle <function ...>"
 }
 
-
-rank = optional_bool_from_env("PIFLUX_RANK")
-
 world_size = optional_bool_from_env("PIFLUX_WORLD_SIZE")
+
+
+class dist:
+    backend = "nccl"
 
 
 try:

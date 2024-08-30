@@ -1,4 +1,4 @@
-MODEL = "black-forest-labs/FLUX.1-schnell"
+MODEL = "black-forest-labs/FLUX.1-dev"
 VARIANT = None
 DTYPE = "bfloat16"
 DEVICE = "cuda"
@@ -7,7 +7,7 @@ CUSTOM_PIPELINE = None
 SCHEDULER = None
 LORA = None
 CONTROLNET = None
-STEPS = 4
+STEPS = 28
 PROMPT = "A cat holding a sign that says hello world"
 NEGATIVE_PROMPT = None
 SEED = None
@@ -17,8 +17,9 @@ HEIGHT = None
 WIDTH = None
 INPUT_IMAGE = None
 CONTROL_IMAGE = None
-OUTPUT_IMAGE = None
+OUTPUT = None
 EXTRA_CALL_KWARGS = None
+FPS = 10
 
 WORLD_SIZE = None
 
@@ -30,6 +31,7 @@ import json
 import time
 
 import diffusers
+import piflux
 
 import torch
 from diffusers.utils import load_image
@@ -56,12 +58,14 @@ def parse_args():
     parser.add_argument("--height", nargs="+", type=int, default=HEIGHT)
     parser.add_argument("--width", nargs="+", type=int, default=WIDTH)
     parser.add_argument("--extra-call-kwargs", type=str, default=EXTRA_CALL_KWARGS)
+    parser.add_argument("--fps", type=int, default=FPS)
     parser.add_argument("--input-image", type=str, default=INPUT_IMAGE)
     parser.add_argument("--control-image", type=str, default=CONTROL_IMAGE)
-    parser.add_argument("--output-image", type=str, default=OUTPUT_IMAGE)
-    parser.add_argument("--world-size", type=int, default=WORLD_SIZE)
+    parser.add_argument("--output", type=str, default=OUTPUT)
     parser.add_argument("--print-output", action="store_true")
     parser.add_argument("--display-output", action="store_true")
+    parser.add_argument("--world-size", type=int, default=WORLD_SIZE)
+    parser.add_argument("--no-ddp", action="store_true")
     return parser.parse_args()
 
 
@@ -95,6 +99,7 @@ def load_pipe(
     if lora is not None:
         pipe.load_lora_weights(lora)
         pipe.fuse_lora()
+        pipe.unload_lora_weights()
     pipe.safety_checker = None
     if device is not None:
         pipe.to(device)
@@ -132,6 +137,8 @@ class IterationProfiler:
 def main():
     args = parse_args()
 
+    use_ddp = not args.no_ddp
+
     if args.pipeline_class is None:
         if args.input_image is None:
             from diffusers import AutoPipelineForText2Image as pipeline_cls
@@ -142,6 +149,14 @@ def main():
 
     dtype = getattr(torch, args.dtype)
     device = torch.device(args.device)
+
+    if use_ddp:
+        assert device.type == "cuda", "Model should be loaded on CUDA device"
+        if torch.cuda.device_count() < 2:
+            print("You don't have multiple GPUs, please set `--no-ddp`.")
+
+        piflux.setup()
+        device = torch.device("cuda", piflux.get_rank())
 
     pipe = load_pipe(
         pipeline_cls,
@@ -155,20 +170,14 @@ def main():
         controlnet=args.controlnet,
     )
 
+    if use_ddp:
+        piflux.patch_pipe(pipe)
+
     core_net = None
     if core_net is None:
         core_net = getattr(pipe, "unet", None)
     if core_net is None:
         core_net = getattr(pipe, "transformer", None)
-
-    world_size = args.world_size
-    if world_size is None or world_size != 0:
-        import piflux
-
-        if world_size is not None:
-            piflux.config.world_size = world_size
-
-        piflux.patch_pipe(pipe)
 
     heights = args.height
     widths = args.width
@@ -206,12 +215,16 @@ def main():
         def get_kwarg_inputs():
             kwarg_inputs = dict(
                 prompt=args.prompt,
-                num_images_per_prompt=args.batch,
                 generator=None if args.seed is None else torch.Generator(device="cuda").manual_seed(args.seed),
                 **(dict() if args.extra_call_kwargs is None else json.loads(args.extra_call_kwargs)),
                 **(dict() if height is None else {"height": height}),
                 **(dict() if width is None else {"width": width}),
             )
+            pipe_parameters = inspect.signature(pipe.__call__).parameters
+            if "num_images_per_prompt" in pipe_parameters:
+                kwarg_inputs["num_images_per_prompt"] = args.batch
+            elif "num_videos_per_prompt" in pipe_parameters:
+                kwarg_inputs["num_videos_per_prompt"] = args.batch
             if args.negative_prompt is not None:
                 kwarg_inputs["negative_prompt"] = args.negative_prompt
             if args.steps is not None:
@@ -241,20 +254,33 @@ def main():
         if "callback_on_step_end" in inspect.signature(pipe).parameters:
             kwarg_inputs["callback_on_step_end"] = iter_profiler.callback_on_step_end
         begin = time.time()
-        output_images = pipe(**kwarg_inputs).images
+        output = pipe(**kwarg_inputs)
         end = time.time()
 
-        if args.print_output:
-            # Let's view it in terminal!
-            from piflux.utils.term_image import print_image
+        if hasattr(output, "images"):
+            output_images = output.images
+            if args.print_output:
+                from piflux.utils.term_image import print_image
 
-            for image in output_images:
-                print_image(image, max_width=80)
-        if args.display_output:
-            from piflux.utils.term_image import display_image
+                for image in output_images:
+                    print_image(image, max_width=80)
+            if args.display_output:
+                from piflux.utils.term_image import display_image
 
-            for image in output_images:
-                display_image(image, width="50%")
+                for image in output_images:
+                    display_image(image, width="50%")
+        elif hasattr(output, "frames"):
+            output_frames = output.frames
+            if args.print_output:
+                from piflux.utils.term_image import print_image
+
+                for frames in output_frames:
+                    print_image(frames[0], max_width=80)
+            if args.display_output:
+                from piflux.utils.term_image import display_image
+
+                for frames in output_frames:
+                    display_image(frames[0], width="50%")
 
         print(f"Inference time: {end - begin:.3f}s")
         iter_per_sec = iter_profiler.get_iter_per_sec()
@@ -264,10 +290,20 @@ def main():
     peak_mem = torch.cuda.max_memory_allocated()
     print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
 
-    if args.output_image is not None:
-        output_images[0].save(args.output_image)
+    if args.output is not None:
+        if hasattr(output, "images"):
+            output.images[0].save(args.output)
+        elif hasattr(output, "frames"):
+            from diffusers.utils import export_to_video
+
+            export_to_video(output.frames[0], args.output, fps=args.fps)
+        else:
+            raise ValueError(f"Cannot handle the output type: {type(output)}")
     else:
         print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
+
+    if use_ddp:
+        piflux.cleanup()
 
 
 if __name__ == "__main__":
