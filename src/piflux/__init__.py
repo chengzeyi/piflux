@@ -93,19 +93,18 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         sample = output[0]
         sample = sample.contiguous()
 
-        gathered_sample = context.get_buffer("transformer_forward_gathered_sample", sample, dim=1)
         gathered_samples = context.get_buffer_list("transformer_forward_gathered_samples", sample)
 
         dist.all_gather(gathered_samples, sample)
 
         gathered_samples = gathered_samples[world_size - master_offset:] + gathered_samples[:world_size - master_offset]
-        torch.cat(gathered_samples, dim=1, out=gathered_sample)
+        sample = torch.cat(gathered_samples, dim=1)
 
         ctx.next_step()
 
         if return_dict:
-            return (gathered_sample, *output[1:])
-        return output.__class__(gathered_sample, *output[1:])
+            return (sample, *output[1:])
+        return output.__class__(sample, *output[1:])
 
     new_forward = new_forward.__get__(transformer)
     transformer.forward = new_forward
