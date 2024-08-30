@@ -42,8 +42,8 @@ def get_buffer(
     *,
     repeats: Optional[int] = None,
     dim=0,
-    dtype: Optional[torch.dtype],
-    device: Optional[torch.device],
+    dtype: Optional[torch.dtype] = None,
+    device: Optional[torch.device] = None,
 ) -> torch.Tensor:
     assert current_context is not None
 
@@ -54,6 +54,9 @@ def get_buffer(
         shape = shape_or_tensor.shape
         dtype = shape_or_tensor.dtype
         device = shape_or_tensor.device
+
+    assert dtype is not None
+    assert device is not None
 
     buffer = current_context.buffers.get(name)
     if buffer is None or buffer.shape != shape or buffer.dtype != dtype or buffer.device != device:
@@ -88,6 +91,9 @@ def get_buffer_list(
         shape = shape_or_tensor.shape
         dtype = shape_or_tensor.dtype
         device = shape_or_tensor.device
+
+    assert dtype is not None
+    assert device is not None
 
     buffer_list = current_context.buffer_lists.get(name)
     if (

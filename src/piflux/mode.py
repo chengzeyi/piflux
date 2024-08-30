@@ -19,10 +19,13 @@ class DistributedAttentionMode(TorchFunctionMode):
                 args, kwargs, "query", "key", "value", "attn_mask", "dropout_p", "is_causal", "scale", "enable_gqa"
             )
 
-            assert attn_mask is None
+            assert attn_mask is None, "attn_mask is not supported in distributed mode for scaled_dot_product_attention"
 
-            gathered_keys = ctx.get_buffer_list(f"scaled_dot_product_attention_keys_{idx}", key)
-            gathered_values = ctx.get_buffer_list(f"scaled_dot_product_attention_values_{idx}", value)
+            key = key.contiguous()
+            value = value.contiguous()
+
+            gathered_keys = context.get_buffer_list(f"scaled_dot_product_attention_keys_{idx}", key)
+            gathered_values = context.get_buffer_list(f"scaled_dot_product_attention_values_{idx}", value)
 
             dist.all_gather(gathered_keys, key)
             dist.all_gather(gathered_values, value)

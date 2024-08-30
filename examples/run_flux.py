@@ -215,7 +215,7 @@ def main():
         def get_kwarg_inputs():
             kwarg_inputs = dict(
                 prompt=args.prompt,
-                generator=None if args.seed is None else torch.Generator(device="cuda").manual_seed(args.seed),
+                generator=None if args.seed is None else torch.Generator(device).manual_seed(args.seed),
                 **(dict() if args.extra_call_kwargs is None else json.loads(args.extra_call_kwargs)),
                 **(dict() if height is None else {"height": height}),
                 **(dict() if width is None else {"width": width}),
