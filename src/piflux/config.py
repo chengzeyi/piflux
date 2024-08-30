@@ -4,20 +4,11 @@ import sys
 # import torch
 
 
-def optional_bool_from_env(name, default=None):
-    val = os.environ.get(name, None)
-    if val is None:
-        return default
-    if val == "1":
-        return True
-    return False
-
-
 _save_config_ignore = {
     # workaround: "Can't pickle <function ...>"
 }
 
-world_size = optional_bool_from_env("PIFLUX_WORLD_SIZE")
+world_size = int(os.environ.get("PIFLUX_WORLD_SIZE", "-1"))
 
 
 class dist:

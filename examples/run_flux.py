@@ -65,7 +65,6 @@ def parse_args():
     parser.add_argument("--print-output", action="store_true")
     parser.add_argument("--display-output", action="store_true")
     parser.add_argument("--world-size", type=int, default=WORLD_SIZE)
-    parser.add_argument("--no-ddp", action="store_true")
     return parser.parse_args()
 
 
@@ -137,7 +136,7 @@ class IterationProfiler:
 def main():
     args = parse_args()
 
-    use_ddp = not args.no_ddp
+    use_ddp = args.world_size is None or args.world_size != 0
 
     if args.pipeline_class is None:
         if args.input_image is None:
@@ -152,8 +151,6 @@ def main():
 
     if use_ddp:
         assert device.type == "cuda", "Model should be loaded on CUDA device"
-        if torch.cuda.device_count() < 2:
-            print("You don't have multiple GPUs, please set `--no-ddp`.")
 
         piflux.setup()
         device = torch.device("cuda", piflux.get_rank())

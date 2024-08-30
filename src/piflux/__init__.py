@@ -10,9 +10,6 @@ from .mode import DistributedAttentionMode
 
 def setup() -> None:
     world_size = config.world_size
-    if world_size is None:
-        world_size = torch.cuda.device_count()
-    assert world_size > 0
 
     dist.init_process_group(backend=config.dist.backend, world_size=world_size)
 

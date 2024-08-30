@@ -30,7 +30,8 @@ pre-commit run --all-files
 ### Run the example
 
 ```bash
-torchrun --nproc_per_node=2 examples/run_flux.py --print-output
+N_GPUS=2
+torchrun --nproc_per_node=$N_GPUS examples/run_flux.py --print-output
 ```
 
 ## Thanks
