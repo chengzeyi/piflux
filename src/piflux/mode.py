@@ -27,13 +27,11 @@ class DistributedAttentionMode(TorchFunctionMode):
             gathered_keys = context.get_buffer_list(f"scaled_dot_product_attention_keys_{idx}", key)
             gathered_values = context.get_buffer_list(f"scaled_dot_product_attention_values_{idx}", value)
 
-            step = ctx.step
-            offset = ctx.offset
-
-            if step == 0:
+            if ctx.is_sync_step:
                 dist.all_gather(gathered_keys, key)
                 dist.all_gather(gathered_values, value)
             else:
+                offset = ctx.offset
                 gathered_keys[offset] = key
                 gathered_values[offset] = value
 

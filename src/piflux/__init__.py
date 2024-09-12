@@ -34,7 +34,7 @@ def create_context() -> context.ParallelContext:
     world_size = get_world_size()
     rank = get_rank()
 
-    return context.ParallelContext(world_size=world_size, rank=rank)
+    return context.ParallelContext(world_size=world_size, rank=rank, sync_steps=config.sync_steps)
 
 
 def patch_pipe(pipe: FluxPipeline) -> None:
@@ -94,7 +94,9 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
 
         dist.all_gather(gathered_samples, sample)
 
-        gathered_samples = gathered_samples[world_size - master_offset:] + gathered_samples[:world_size - master_offset]
+        gathered_samples = (
+            gathered_samples[world_size - master_offset :] + gathered_samples[: world_size - master_offset]
+        )
         sample = torch.cat(gathered_samples, dim=1)
 
         ctx.next_step()

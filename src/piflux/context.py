@@ -19,6 +19,7 @@ class ParallelContext:
     counters: DefaultDict[str, int] = dataclasses.field(default_factory=lambda: defaultdict(int))
 
     step: int = 0
+    sync_steps: int = 1
 
     def next_step(self) -> None:
         self.step += 1
@@ -31,6 +32,10 @@ class ParallelContext:
     @property
     def master_offset(self) -> int:
         return self.step % self.world_size
+
+    @property
+    def is_sync_step(self) -> bool:
+        return self.sync_steps > 0 and self.step < self.sync_steps
 
 
 @contextlib.contextmanager

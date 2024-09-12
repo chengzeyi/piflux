@@ -22,6 +22,13 @@ EXTRA_CALL_KWARGS = None
 FPS = 10
 
 WORLD_SIZE = None
+SYNC_STEPS = 1
+
+COMPILE_IGNORES = []
+COMPILE_KEEPS = []
+COMPILE_CONFIG = None
+MEMORY_FORMAT = "channels_last"
+QUANTIZE_CONFIG = None
 
 import argparse
 import importlib
@@ -65,6 +72,15 @@ def parse_args():
     parser.add_argument("--print-output", action="store_true")
     parser.add_argument("--display-output", action="store_true")
     parser.add_argument("--world-size", type=int, default=WORLD_SIZE)
+    parser.add_argument("--sync-steps", type=int, default=SYNC_STEPS)
+    parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--compile-ignores", type=str, nargs="*", default=COMPILE_IGNORES)
+    parser.add_argument("--compile-keeps", type=str, nargs="*", default=COMPILE_KEEPS)
+    parser.add_argument("--compile-config", type=str, default=COMPILE_CONFIG)
+    parser.add_argument("--fuse-qkv-projections", action="store_true")
+    parser.add_argument("--memory-format", type=str, default=MEMORY_FORMAT)
+    parser.add_argument("--quantize", action="store_true")
+    parser.add_argument("--quantize-config", type=str, default=QUANTIZE_CONFIG)
     return parser.parse_args()
 
 
@@ -152,6 +168,8 @@ def main():
     if use_ddp:
         assert device.type == "cuda", "Model should be loaded on CUDA device"
 
+        piflux.config.sync_steps = args.sync_steps
+
         piflux.setup()
         device = torch.device("cuda", piflux.get_rank())
 
@@ -169,6 +187,27 @@ def main():
 
     if use_ddp:
         piflux.patch_pipe(pipe)
+
+    if args.compile:
+        from xelerate.frontends.diffusers.diffusion_pipeline_compiler import compile_pipe
+
+        compile_ignores = args.compile_ignores
+        compile_keeps = args.compile_keeps
+
+        compile_config = json.loads(args.compile_config) if args.compile_config is not None else {}
+        memory_format = getattr(torch, args.memory_format)
+        quantize_config = json.loads(args.quantize_config) if args.quantize_config is not None else {}
+
+        pipe = compile_pipe(
+            pipe,
+            ignores=compile_ignores,
+            keeps=compile_keeps,
+            config=compile_config,
+            fuse_qkv_projections=args.fuse_qkv_projections,
+            memory_format=memory_format,
+            quantize=args.quantize,
+            quantize_config=quantize_config,
+        )
 
     core_net = None
     if core_net is None:

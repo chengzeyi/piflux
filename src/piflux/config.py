@@ -10,6 +10,8 @@ _save_config_ignore = {
 
 world_size = int(os.environ.get("PIFLUX_WORLD_SIZE", "-1"))
 
+sync_steps = int(os.environ.get("PIFLUX_SYNC_STEPS", "1"))
+
 
 class dist:
     backend = os.environ.get("PIFLUX_DIST_BACKEND")
