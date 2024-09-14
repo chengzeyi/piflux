@@ -4,7 +4,11 @@ import torch
 import torch.distributed as dist
 from diffusers import FluxPipeline, FluxTransformer2DModel
 
-from . import config, context, ops  # noqa: F401
+from . import (
+    config,
+    context,
+    ops,  # noqa: F401
+)
 from .mode import DistributedAttentionMode
 
 piflux_ops = torch.ops.piflux
@@ -78,15 +82,15 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         ctx = context.current_context
         assert ctx is not None
 
-        hidden_states = piflux_ops.get_assigned_chunk(hidden_states, dim=1)
-        img_ids = piflux_ops.get_assigned_chunk(img_ids, dim=0)
+        hidden_states = piflux_ops.get_assigned_chunk(hidden_states, dim=-2)
+        img_ids = piflux_ops.get_assigned_chunk(img_ids, dim=-2)
 
         with DistributedAttentionMode():
             output = original_forward(hidden_states, *args, img_ids=img_ids, **kwargs)
         return_dict = not isinstance(output, tuple)
         sample = output[0]
 
-        sample = piflux_ops.cat_from_gather(sample, dim=1)
+        sample = piflux_ops.cat_from_gather(sample, dim=-2)
 
         ctx.next_step()
 
