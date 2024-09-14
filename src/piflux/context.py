@@ -61,7 +61,6 @@ class ParallelContext:
         buffer = self.buffers.get(name)
         if (
             buffer is None
-            or device.type == "meta"
             or buffer.shape != shape
             or buffer.dtype != dtype
             or buffer.device != device
@@ -76,7 +75,7 @@ class ParallelContext:
                     if isinstance(shape_or_tensor, torch.Tensor)
                     else torch.empty(shape, dtype=dtype, device=device)
                 )
-            if name is not None and device.type != "meta":
+            if name is not None:
                 self.buffers[name] = buffer
         return buffer
 
@@ -106,7 +105,6 @@ class ParallelContext:
         buffer_list = self.buffer_lists.get(name)
         if (
             buffer_list is None
-            or device.type == "meta"
             or len(buffer_list) != num
             or buffer_list[0].shape != shape
             or buffer_list[0].dtype != dtype
@@ -118,7 +116,7 @@ class ParallelContext:
                 else torch.empty(shape, dtype=dtype, device=device)
                 for _ in range(num)
             ]
-            if name is not None and device.type != "meta":
+            if name is not None:
                 self.buffer_lists[name] = buffer_list
         return buffer_list
 

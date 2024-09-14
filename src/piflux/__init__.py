@@ -51,9 +51,6 @@ def patch_pipe(pipe: FluxPipeline) -> None:
 
     @functools.wraps(pipe.prepare_latents.__func__)
     def new_prepare_latents(self, *args, **kwargs):
-        ctx = context.current_context
-        assert ctx is not None
-
         latents, latent_image_ids = original_prepare_latents(*args, **kwargs)
         latents = piflux_ops.cat_from_gather(latents, dim=0)
         latents = piflux_ops.get_assigned_chunk(latents, dim=0, idx=0)
@@ -78,10 +75,8 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
     original_forward = transformer.forward
 
     @functools.wraps(original_forward.__func__)
+    @torch.compiler.disable(recursive=False)
     def new_forward(self, hidden_states: torch.Tensor, *args, img_ids: torch.Tensor = None, **kwargs):
-        ctx = context.current_context
-        assert ctx is not None
-
         hidden_states = piflux_ops.get_assigned_chunk(hidden_states, dim=-2)
         img_ids = piflux_ops.get_assigned_chunk(img_ids, dim=-2)
 
@@ -92,7 +87,7 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
 
         sample = piflux_ops.cat_from_gather(sample, dim=-2)
 
-        ctx.next_step()
+        sample = piflux_ops.next_step(sample)
 
         if return_dict:
             return (sample, *output[1:])
