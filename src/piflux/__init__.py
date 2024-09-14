@@ -4,8 +4,10 @@ import torch
 import torch.distributed as dist
 from diffusers import FluxPipeline, FluxTransformer2DModel
 
-from . import config, context
+from . import config, context, ops  # noqa: F401
 from .mode import DistributedAttentionMode
+
+piflux_ops = torch.ops.piflux
 
 
 def setup() -> None:
@@ -49,10 +51,8 @@ def patch_pipe(pipe: FluxPipeline) -> None:
         assert ctx is not None
 
         latents, latent_image_ids = original_prepare_latents(*args, **kwargs)
-        latents = latents.contiguous()
-        gathered_latents = context.get_buffer_list("pipe_prepare_latents_gathered_latents", latents)
-        dist.all_gather(gathered_latents, latents)
-        latents = gathered_latents[0]
+        latents = piflux_ops.cat_from_gather(latents, dim=0)
+        latents = piflux_ops.get_assigned_chunk(latents, dim=0, idx=0)
         return latents, latent_image_ids
 
     pipe.prepare_latents = new_prepare_latents.__get__(pipe)
@@ -77,27 +77,16 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
     def new_forward(self, hidden_states: torch.Tensor, *args, img_ids: torch.Tensor = None, **kwargs):
         ctx = context.current_context
         assert ctx is not None
-        world_size = ctx.world_size
-        offset = ctx.offset
-        master_offset = ctx.master_offset
 
-        hidden_states = hidden_states.chunk(ctx.world_size, dim=1)[offset]
-        img_ids = img_ids.chunk(ctx.world_size, dim=0)[offset]
+        hidden_states = piflux_ops.get_assigned_chunk(hidden_states, dim=1)
+        img_ids = piflux_ops.get_assigned_chunk(img_ids, dim=0)
 
         with DistributedAttentionMode():
             output = original_forward(hidden_states, *args, img_ids=img_ids, **kwargs)
         return_dict = not isinstance(output, tuple)
         sample = output[0]
-        sample = sample.contiguous()
 
-        gathered_samples = context.get_buffer_list("transformer_forward_gathered_samples", sample)
-
-        dist.all_gather(gathered_samples, sample)
-
-        gathered_samples = (
-            gathered_samples[world_size - master_offset :] + gathered_samples[: world_size - master_offset]
-        )
-        sample = torch.cat(gathered_samples, dim=1)
+        sample = piflux_ops.cat_from_gather(sample, dim=1)
 
         ctx.next_step()
 

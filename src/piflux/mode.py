@@ -1,42 +1,22 @@
 import torch
-import torch.distributed as dist
 from torch.overrides import TorchFunctionMode
 
-from . import context
+piflux_ops = torch.ops.piflux
 
 
 class DistributedAttentionMode(TorchFunctionMode):
     def __torch_function__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
 
-        ctx = context.current_context
-
-        if func is torch.nn.functional.scaled_dot_product_attention and ctx.world_size > 1:
-            idx = ctx.counters["scaled_dot_product_attention"]
-            ctx.counters["scaled_dot_product_attention"] += 1
-
+        if func is torch.nn.functional.scaled_dot_product_attention:
             (query, key, value, attn_mask, dropout_p, is_causal, scale, enable_gqa) = get_args(
                 args, kwargs, "query", "key", "value", "attn_mask", "dropout_p", "is_causal", "scale", "enable_gqa"
             )
 
             assert attn_mask is None, "attn_mask is not supported in distributed mode for scaled_dot_product_attention"
 
-            key = key.contiguous()
-            value = value.contiguous()
-
-            gathered_keys = context.get_buffer_list(f"scaled_dot_product_attention_keys_{idx}", key)
-            gathered_values = context.get_buffer_list(f"scaled_dot_product_attention_values_{idx}", value)
-
-            if ctx.is_sync_step:
-                dist.all_gather(gathered_keys, key)
-                dist.all_gather(gathered_values, value)
-            else:
-                offset = ctx.offset
-                gathered_keys[offset] = key
-                gathered_values[offset] = value
-
-            key = torch.cat(gathered_keys, dim=2)
-            value = torch.cat(gathered_values, dim=2)
+            key = piflux_ops.cat_from_gather_or_cache(key, dim=2)
+            value = piflux_ops.cat_from_gather_or_cache(value, dim=2)
 
             args = (query, key, value)
             kwargs = {}
