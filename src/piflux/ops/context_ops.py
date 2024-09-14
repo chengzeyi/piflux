@@ -9,7 +9,7 @@ from piflux import context
 @torch.library.custom_op(
     "piflux::get_assigned_chunk",
     mutates_args=(),
-    device_types=[None, "meta"],
+    device_types=[None],
 )
 def get_assigned_chunk(
     tensor: torch.Tensor,
@@ -22,13 +22,13 @@ def get_assigned_chunk(
     if idx is None:
         idx = ctx.offset
 
-    return torch.chunk(tensor, ctx.world_size, dim=dim)[idx]
+    return torch.chunk(tensor, ctx.world_size, dim=dim)[idx].clone()
 
 
 @torch.library.custom_op(
     "piflux::cat_from_gather_or_cache",
     mutates_args=(),
-    device_types=[None, "meta"],
+    device_types=[None],
 )
 def cat_from_gather_or_cache(
     tensor: torch.Tensor,
@@ -70,7 +70,7 @@ def cat_from_gather_or_cache(
 @torch.library.custom_op(
     "piflux::cat_from_gather",
     mutates_args=(),
-    device_types=[None, "meta"],
+    device_types=[None],
 )
 def cat_from_gather(
     tensor: torch.Tensor,
