@@ -2,7 +2,7 @@ import functools
 
 import torch
 import torch.distributed as dist
-from diffusers import FluxPipeline, FluxTransformer2DModel
+from diffusers import DiffusionPipeline, FluxTransformer2DModel
 
 from . import (
     config,
@@ -43,8 +43,8 @@ def create_context() -> context.ParallelContext:
     return context.ParallelContext(world_size=world_size, rank=rank, sync_steps=config.sync_steps)
 
 
-def patch_pipe(pipe: FluxPipeline) -> None:
-    assert isinstance(pipe, FluxPipeline)
+def patch_pipe(pipe: DiffusionPipeline) -> None:
+    assert isinstance(pipe, DiffusionPipeline)
     patch_transformer(pipe.transformer)
 
     original_prepare_latents = pipe.prepare_latents

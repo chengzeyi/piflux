@@ -23,6 +23,9 @@ class ParallelContext:
 
     def next_step(self) -> None:
         self.step += 1
+        total_count = 0
+        for name, count in self.counters.items():
+            total_count += count
         self.counters.clear()
 
     @property
@@ -36,6 +39,13 @@ class ParallelContext:
     @property
     def is_sync_step(self) -> bool:
         return self.sync_steps > 0 and self.step < self.sync_steps
+
+    def get_incremental_name(self, name: Optional[str] = None) -> str:
+        if name is None:
+            name = "default"
+        idx = self.counters[name]
+        self.counters[name] += 1
+        return f"{name}_{idx}"
 
     def get_buffer(
         self,

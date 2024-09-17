@@ -58,10 +58,7 @@ def cat_from_gather_or_cache(
     ctx = context.current_context
     assert ctx is not None
 
-    if name is None:
-        idx = ctx.counters["cat_from_gather_or_cache"]
-        ctx.counters["cat_from_gather_or_cache"] += 1
-        name = f"cat_from_gather_or_cache_{idx}"
+    name = ctx.get_incremental_name(name)
 
     gathered_tensors = ctx.get_buffer_list(tensor, name=name)
 
@@ -74,7 +71,7 @@ def cat_from_gather_or_cache(
         )
     else:
         offset = ctx.offset
-        gathered_tensors[offset] = tensor
+        gathered_tensors[offset] = tensor.clone()
 
     ctx.set_buffer_list(name, gathered_tensors)
 
