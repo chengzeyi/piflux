@@ -49,7 +49,7 @@ torch.library.custom_op(
 )(get_assigned_chunk).register_fake(get_assigned_chunk)
 
 
-def cat_from_gather_or_cache(
+def get_complete_tensor(
     tensor: torch.Tensor,
     *,
     dim: int = 0,
@@ -60,29 +60,34 @@ def cat_from_gather_or_cache(
 
     name = ctx.get_incremental_name(name)
 
-    gathered_tensors = ctx.get_buffer_list(tensor, name=name)
+    world_size = ctx.world_size
+    offset = ctx.offset
+
+    permute_dims = list(range(tensor.dim()))
+    permute_dims[dim], permute_dims[0] = permute_dims[0], permute_dims[dim]
+    tensor = tensor.permute(permute_dims)
+
+    output_tensor = ctx.get_buffer(tensor, name=name, repeats=world_size, dim=0)
 
     if ctx.is_sync_step:
-        dist.all_gather(gathered_tensors, tensor.contiguous())
-        world_size = ctx.world_size
-        master_offset = ctx.master_offset
-        gathered_tensors = (
-            gathered_tensors[world_size - master_offset :] + gathered_tensors[: world_size - master_offset]
-        )
+        dist.all_gather_into_tensor(output_tensor, tensor.contiguous())
     else:
-        offset = ctx.offset
-        gathered_tensors[offset] = tensor.clone()
+        gathered_tensor_shape = output_tensor.shape
+        tmp_shape = list(output_tensor.shape)
+        tmp_shape[0] //= world_size
+        tmp_shape.insert(0, world_size)
+        output_tensor = output_tensor.view(tmp_shape)
+        output_tensor[offset].copy_(tensor)
+        output_tensor = output_tensor.view(gathered_tensor_shape)
 
-    ctx.set_buffer_list(name, gathered_tensors)
+    ctx.set_buffer(name, output_tensor)
 
-    output_shape = list(tensor.shape)
-    output_shape[dim] *= len(gathered_tensors)
-    output_tensor = torch.empty(output_shape, dtype=tensor.dtype, device=tensor.device)
-    output_tensor = torch.cat(gathered_tensors, dim=dim, out=output_tensor)
+    output_tensor = output_tensor.permute(permute_dims)
+
     return output_tensor
 
 
-def cat_from_gather_or_cache_fake(
+def get_complete_tensor_fake(
     tensor: torch.Tensor,
     *,
     dim: int = 0,
@@ -94,13 +99,20 @@ def cat_from_gather_or_cache_fake(
     output_shape = list(tensor.shape)
     output_shape[dim] *= ctx.world_size
     output_tensor = torch.empty(output_shape, dtype=tensor.dtype, device=tensor.device)
+
+    permute_dims = list(range(tensor.dim()))
+    permute_dims[dim], permute_dims[0] = permute_dims[0], permute_dims[dim]
+    output_tensor = output_tensor.permute(permute_dims)
+    output_tensor = output_tensor.contiguous()
+    output_tensor = output_tensor.permute(permute_dims)
+
     return output_tensor
 
 
 torch.library.custom_op(
-    "piflux::cat_from_gather_or_cache",
+    "piflux::get_complete_tensor",
     mutates_args=(),
-)(cat_from_gather_or_cache).register_fake(cat_from_gather_or_cache_fake)
+)(get_complete_tensor).register_fake(get_complete_tensor_fake)
 
 
 def cat_from_gather(

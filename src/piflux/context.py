@@ -30,11 +30,15 @@ class ParallelContext:
 
     @property
     def offset(self) -> int:
-        return (self.rank + self.step) % self.world_size
+        if self.sync_steps <= 0:
+            return self.rank
+        return (self.rank + max(0, self.step - self.sync_steps)) % self.world_size
 
     @property
     def master_offset(self) -> int:
-        return self.step % self.world_size
+        if self.sync_steps <= 0:
+            return 0
+        return max(0, self.step - self.sync_steps) % self.world_size
 
     @property
     def is_sync_step(self) -> bool:
@@ -52,8 +56,8 @@ class ParallelContext:
         shape_or_tensor: Union[Tuple[int], torch.Tensor],
         *,
         name: Optional[str] = None,
-        repeats: Optional[int] = None,
-        dim=0,
+        repeats: int = 1,
+        dim: int = 0,
         dtype: Optional[torch.dtype] = None,
         device: Optional[torch.device] = None,
     ) -> torch.Tensor:
@@ -68,23 +72,18 @@ class ParallelContext:
         assert dtype is not None
         assert device is not None
 
+        shape = list(shape)
+        if repeats > 1:
+            shape[dim] *= repeats
+
         buffer = self.buffers.get(name)
         if (
             buffer is None
-            or buffer.shape != shape
+            or list(buffer.shape) != shape
             or buffer.dtype != dtype
             or buffer.device != device
         ):
-            if repeats > 1:
-                new_shape = list(shape)
-                new_shape[dim] *= repeats
-                buffer = torch.empty(new_shape, dtype=dtype, device=device)
-            else:
-                buffer = (
-                    torch.empty_like(shape_or_tensor)
-                    if isinstance(shape_or_tensor, torch.Tensor)
-                    else torch.empty(shape, dtype=dtype, device=device)
-                )
+            buffer = torch.empty(shape, dtype=dtype, device=device)
             if name is not None:
                 self.buffers[name] = buffer
         return buffer
@@ -112,18 +111,18 @@ class ParallelContext:
         assert dtype is not None
         assert device is not None
 
+        shape = list(shape)
+
         buffer_list = self.buffer_lists.get(name)
         if (
             buffer_list is None
             or len(buffer_list) != num
-            or buffer_list[0].shape != shape
+            or list(buffer_list[0].shape) != shape
             or buffer_list[0].dtype != dtype
             or buffer_list[0].device != device
         ):
             buffer_list = [
-                torch.empty_like(shape_or_tensor)
-                if isinstance(shape_or_tensor, torch.Tensor)
-                else torch.empty(shape, dtype=dtype, device=device)
+                torch.empty(shape, dtype=dtype, device=device)
                 for _ in range(num)
             ]
             if name is not None:
