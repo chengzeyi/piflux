@@ -1,15 +1,11 @@
 import functools
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 import torch.distributed as dist
 from diffusers import DiffusionPipeline, FluxTransformer2DModel
 
-from . import (
-    config,
-    context,
-    ops,  # noqa: F401
-)
+from . import config, context, ops  # noqa: F401
 from .mode import DistributedAttentionMode
 
 piflux_ops = torch.ops.piflux
@@ -41,9 +37,7 @@ def create_context() -> context.ParallelContext:
     world_size = get_world_size()
     rank = get_rank()
 
-    return context.ParallelContext(world_size=world_size,
-                                   rank=rank,
-                                   sync_steps=config.sync_steps)
+    return context.ParallelContext(world_size=world_size, rank=rank, sync_steps=config.sync_steps)
 
 
 def patch_pipe(pipe: DiffusionPipeline) -> None:
@@ -55,7 +49,7 @@ def patch_pipe(pipe: DiffusionPipeline) -> None:
     @functools.wraps(pipe.prepare_latents.__func__)
     def new_prepare_latents(self, *args, **kwargs):
         latents, latent_image_ids = original_prepare_latents(*args, **kwargs)
-        latents = piflux_ops.cat_from_gather(latents, dim=0)
+        latents = piflux_ops.get_complete_tensor(latents, dim=0)
         latents = piflux_ops.get_assigned_chunk(latents, dim=0, idx=0)
         return latents, latent_image_ids
 
@@ -95,23 +89,29 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         img_ids = piflux_ops.get_assigned_chunk(img_ids, dim=-2)
         txt_ids = piflux_ops.get_assigned_chunk(txt_ids, dim=-2)
         if controlnet_block_samples is not None:
-            controlnet_block_samples = [piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_block_samples]
+            controlnet_block_samples = [
+                piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_block_samples
+            ]
         if controlnet_single_block_samples is not None:
-            controlnet_single_block_samples = [piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_single_block_samples]
+            controlnet_single_block_samples = [
+                piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_single_block_samples
+            ]
 
         with DistributedAttentionMode():
-            output = original_forward(hidden_states,
-                                      encoder_hidden_states,
-                                      *args,
-                                      img_ids=img_ids,
-                                      txt_ids=txt_ids,
-                                      controlnet_block_samples=controlnet_block_samples,
-                                      controlnet_single_block_samples=controlnet_single_block_samples,
-                                      **kwargs)
+            output = original_forward(
+                hidden_states,
+                encoder_hidden_states,
+                *args,
+                img_ids=img_ids,
+                txt_ids=txt_ids,
+                controlnet_block_samples=controlnet_block_samples,
+                controlnet_single_block_samples=controlnet_single_block_samples,
+                **kwargs,
+            )
         return_dict = not isinstance(output, tuple)
         sample = output[0]
 
-        sample = piflux_ops.cat_from_gather(sample, dim=-2)
+        sample = piflux_ops.get_complete_tensor(sample, dim=-2)
 
         sample = piflux_ops.next_step(sample)
 

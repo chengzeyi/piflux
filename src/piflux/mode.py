@@ -15,8 +15,8 @@ class DistributedAttentionMode(TorchFunctionMode):
 
             assert attn_mask is None, "attn_mask is not supported in distributed mode for scaled_dot_product_attention"
 
-            key = piflux_ops.get_complete_tensor(key, dim=-2)
-            value = piflux_ops.get_complete_tensor(value, dim=-2)
+            key = piflux_ops.get_complete_tensor(key, dim=-2, enable_cache=True)
+            value = piflux_ops.get_complete_tensor(value, dim=-2, enable_cache=True)
 
             args = (query, key, value)
             kwargs = {}

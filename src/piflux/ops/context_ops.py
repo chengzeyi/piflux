@@ -23,10 +23,9 @@ def next_step_fake(
     return torch.empty_like(tensor)
 
 
-torch.library.custom_op(
-    "piflux::next_step",
-    mutates_args=(),
-)(next_step).register_fake(next_step_fake)
+torch.library.custom_op("piflux::next_step", mutates_args=(),)(
+    next_step
+).register_fake(next_step_fake)
 
 
 def get_assigned_chunk(
@@ -43,10 +42,9 @@ def get_assigned_chunk(
     return torch.chunk(tensor, ctx.world_size, dim=dim)[idx].clone()
 
 
-torch.library.custom_op(
-    "piflux::get_assigned_chunk",
-    mutates_args=(),
-)(get_assigned_chunk).register_fake(get_assigned_chunk)
+torch.library.custom_op("piflux::get_assigned_chunk", mutates_args=(),)(
+    get_assigned_chunk
+).register_fake(get_assigned_chunk)
 
 
 def get_complete_tensor(
@@ -54,14 +52,19 @@ def get_complete_tensor(
     *,
     dim: int = 0,
     name: Optional[str] = None,
+    enable_cache: bool = False,
 ) -> torch.Tensor:
     ctx = context.current_context
     assert ctx is not None
 
-    name = ctx.get_incremental_name(name)
+    if enable_cache:
+        name = ctx.get_incremental_name(name)
+    else:
+        assert name is None
 
     world_size = ctx.world_size
     offset = ctx.offset
+    master_offset = ctx.master_offset
 
     permute_dims = list(range(tensor.dim()))
     permute_dims[dim], permute_dims[0] = permute_dims[0], permute_dims[dim]
@@ -69,8 +72,12 @@ def get_complete_tensor(
 
     output_tensor = ctx.get_buffer(tensor, name=name, repeats=world_size, dim=0)
 
-    if ctx.is_sync_step:
-        dist.all_gather_into_tensor(output_tensor, tensor.contiguous())
+    if not enable_cache or ctx.is_sync_step:
+        gathered_tensors = list(output_tensor.chunk(world_size, dim=0))
+        gathered_tensors = (
+            gathered_tensors[world_size - master_offset :] + gathered_tensors[: world_size - master_offset]
+        )
+        dist.all_gather(gathered_tensors, tensor.contiguous())
     else:
         gathered_tensor_shape = output_tensor.shape
         tmp_shape = list(output_tensor.shape)
@@ -92,6 +99,7 @@ def get_complete_tensor_fake(
     *,
     dim: int = 0,
     name: Optional[str] = None,
+    enable_cache: bool = False,
 ) -> torch.Tensor:
     ctx = context.current_context
     assert ctx is not None
@@ -109,51 +117,6 @@ def get_complete_tensor_fake(
     return output_tensor
 
 
-torch.library.custom_op(
-    "piflux::get_complete_tensor",
-    mutates_args=(),
-)(get_complete_tensor).register_fake(get_complete_tensor_fake)
-
-
-def cat_from_gather(
-    tensor: torch.Tensor,
-    *,
-    dim: int = 0,
-) -> torch.Tensor:
-    ctx = context.current_context
-    assert ctx is not None
-
-    gathered_tensors = ctx.get_buffer_list(tensor)
-
-    dist.all_gather(gathered_tensors, tensor.contiguous())
-    world_size = ctx.world_size
-    master_offset = ctx.master_offset
-    gathered_tensors = (
-        gathered_tensors[world_size - master_offset :] + gathered_tensors[: world_size - master_offset]
-    )
-
-    output_shape = list(tensor.shape)
-    output_shape[dim] *= len(gathered_tensors)
-    output_tensor = torch.empty(output_shape, dtype=tensor.dtype, device=tensor.device)
-    output_tensor = torch.cat(gathered_tensors, dim=dim, out=output_tensor)
-    return output_tensor
-
-
-def cat_from_gather_fake(
-    tensor: torch.Tensor,
-    *,
-    dim: int = 0,
-) -> torch.Tensor:
-    ctx = context.current_context
-    assert ctx is not None
-
-    output_shape = list(tensor.shape)
-    output_shape[dim] *= context.current_context.world_size
-    output_tensor = torch.empty(output_shape, dtype=tensor.dtype, device=tensor.device)
-    return output_tensor
-
-
-torch.library.custom_op(
-    "piflux::cat_from_gather",
-    mutates_args=(),
-)(cat_from_gather).register_fake(cat_from_gather_fake)
+torch.library.custom_op("piflux::get_complete_tensor", mutates_args=(),)(
+    get_complete_tensor
+).register_fake(get_complete_tensor_fake)
