@@ -116,8 +116,8 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
         sample = piflux_ops.next_step(sample)
 
         if return_dict:
-            return (sample, *output[1:])
-        return output.__class__(sample, *output[1:])
+            return output.__class__(sample, *output[1:])
+        return (sample, *output[1:])
 
     new_forward = new_forward.__get__(transformer)
     transformer.forward = new_forward

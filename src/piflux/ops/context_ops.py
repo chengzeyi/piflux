@@ -39,7 +39,7 @@ def get_assigned_chunk(
     if idx is None:
         idx = ctx.offset
 
-    return torch.chunk(tensor, ctx.world_size, dim=dim)[idx].clone()
+    return tensor.chunk(ctx.world_size, dim=dim)[idx].clone()
 
 
 torch.library.custom_op("piflux::get_assigned_chunk", mutates_args=(),)(
