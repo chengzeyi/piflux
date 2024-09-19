@@ -10,7 +10,8 @@ import torch
 
 from diffusers import DiffusionPipeline, FluxTransformer2DModel
 
-from .mode import DistributedAttentionMode
+from piflux.mode import DistributedAttentionMode
+from piflux import context
 
 piflux_ops = torch.ops.piflux
 
@@ -91,7 +92,7 @@ def patch_pipe(pipe: DiffusionPipeline) -> None:
 
     @functools.wraps(original_call)
     def new_call(self, *args, **kwargs):
-        ctx = create_context()
+        ctx = context.create_context()
         with context.patch_current_context(ctx):
             return original_call(self, *args, **kwargs)
 
