@@ -186,7 +186,7 @@ def main():
     )
 
     if use_ddp:
-        piflux.patch_pipe(pipe)
+        piflux.adapters.diffusers.patch_pipe(pipe)
 
     if args.compile:
         from xelerate.frontends.diffusers.diffusion_pipeline_compiler import compile_pipe

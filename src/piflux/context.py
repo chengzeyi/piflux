@@ -5,6 +5,8 @@ from typing import DefaultDict, Dict, List, Optional, Tuple, Union
 
 import torch
 
+import piflux
+
 current_context = None
 
 
@@ -77,12 +79,7 @@ class ParallelContext:
             shape[dim] *= repeats
 
         buffer = self.buffers.get(name)
-        if (
-            buffer is None
-            or list(buffer.shape) != shape
-            or buffer.dtype != dtype
-            or buffer.device != device
-        ):
+        if buffer is None or list(buffer.shape) != shape or buffer.dtype != dtype or buffer.device != device:
             buffer = torch.empty(shape, dtype=dtype, device=device)
             if name is not None:
                 self.buffers[name] = buffer
@@ -121,16 +118,20 @@ class ParallelContext:
             or buffer_list[0].dtype != dtype
             or buffer_list[0].device != device
         ):
-            buffer_list = [
-                torch.empty(shape, dtype=dtype, device=device)
-                for _ in range(num)
-            ]
+            buffer_list = [torch.empty(shape, dtype=dtype, device=device) for _ in range(num)]
             if name is not None:
                 self.buffer_lists[name] = buffer_list
         return buffer_list
 
     def set_buffer_list(self, name: str, tensors: List[torch.Tensor]) -> None:
         self.buffer_lists[name] = tensors
+
+
+def create_context() -> ParallelContext:
+    world_size = piflux.get_world_size()
+    rank = piflux.get_rank()
+
+    return ParallelContext(world_size=world_size, rank=rank, sync_steps=piflux.config.sync_steps)
 
 
 @contextlib.contextmanager
