@@ -43,7 +43,13 @@ torchrun --nproc_per_node=$N_GPUS examples/run_flux.py --print-output
 
 ## Quality and Speed
 
-![Quality and Speed](./assets/quality_and_speed.png)
+### Benchmark FLUX.1-dev 1024x1024 28 steps BF16
+
+| Configuration | Wall Time | Iterations per Second | Output Image |
+| - | - | - | - |
+| 1 x H100 (baseline) | 6.37s | 4.52 | ![default](./assets/default.jpg) |
+| 2 x H100 | 3.74s | 8.16 | ![parallel](./assets/parallel.jpg) |
+| 2 x H100 plus a Mysterious Compiler | 1.79s | 18.00 | ![parallel compile](./assets/parallel_compile.jpg) |
 
 ## Thanks
 
