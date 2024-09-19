@@ -41,6 +41,8 @@ torchrun --nproc_per_node=$N_GPUS examples/run_flux.py --print-output
 1. During the first inference step, the input latent is divided into N parts, where N is the number of GPUs. Each part is sent to a different GPU. The model is then run on each GPU with its corresponding input part. When `torch.nn.functional.scaled_dot_product_attention` is called, we call all `gather` to get the full KV and store them into a cache. The output noise prediction is then collected and concatenated to form the final output.
 2. In the remaining inference steps, we don't need to call `gather` to get the full KV. Instead, we circle through the the input latent parts and assign them to different GPUs. Therefore, when `torch.nn.functional.scaled_dot_product_attention` is called, we can use the cached KV from the previous steps and update different parts of the cached KV periodically. The output noise prediction is then collected and concatenated to form the final output.
 
+By doing so, `piflux` minimizes the need for inter-GPU Communication so that it can achieve better performance compared to other implementations.
+
 ## Quality and Speed
 
 ### Benchmark FLUX.1-dev 1024x1024 28 steps BF16
@@ -49,7 +51,7 @@ torchrun --nproc_per_node=$N_GPUS examples/run_flux.py --print-output
 | - | - | - | - |
 | 1 x H100 (baseline) | 6.37s | 4.52 | ![default](./assets/default.jpg) |
 | 2 x H100 | 3.74s | 8.16 | ![parallel](./assets/parallel.jpg) |
-| 2 x H100 plus a Mysterious Compiler | 1.79s | 18.00 | ![parallel compile](./assets/parallel_compile.jpg) |
+| 2 x H100 plus a Mysterious Compiler | 1.74s | 18.64 | ![parallel compile](./assets/parallel_compile.jpg) |
 
 ## Thanks
 
