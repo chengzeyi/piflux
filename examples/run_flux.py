@@ -2,6 +2,8 @@ MODEL = "black-forest-labs/FLUX.1-dev"
 VARIANT = None
 DTYPE = "bfloat16"
 DEVICE = "cuda"
+EXECUTION_DTYPE = None
+EXECUTION_DEVICE = None
 PIPELINE_CLASS = "FluxPipeline"
 CUSTOM_PIPELINE = None
 SCHEDULER = None
@@ -29,6 +31,7 @@ COMPILE_KEEPS = []
 COMPILE_CONFIG = None
 MEMORY_FORMAT = "channels_last"
 QUANTIZE_CONFIG = None
+QUANTIZE_EXTRAS = []
 
 import argparse
 import importlib
@@ -51,6 +54,8 @@ def parse_args():
     parser.add_argument("--variant", type=str, default=VARIANT)
     parser.add_argument("--dtype", type=str, default=DTYPE)
     parser.add_argument("--device", type=str, default=DEVICE)
+    parser.add_argument("--execution-dtype", type=str, default=EXECUTION_DTYPE)
+    parser.add_argument("--execution-device", type=str, default=EXECUTION_DEVICE)
     parser.add_argument("--pipeline-class", type=str, default=PIPELINE_CLASS)
     parser.add_argument("--custom-pipeline", type=str, default=CUSTOM_PIPELINE)
     parser.add_argument("--scheduler", type=str, default=SCHEDULER)
@@ -81,6 +86,7 @@ def parse_args():
     parser.add_argument("--memory-format", type=str, default=MEMORY_FORMAT)
     parser.add_argument("--quantize", action="store_true")
     parser.add_argument("--quantize-config", type=str, default=QUANTIZE_CONFIG)
+    parser.add_argument("--quantize-extras", type=str, nargs="*", default=QUANTIZE_EXTRAS)
     return parser.parse_args()
 
 
@@ -198,6 +204,8 @@ def main():
         memory_format = getattr(torch, args.memory_format)
         quantize_config = json.loads(args.quantize_config) if args.quantize_config is not None else {}
 
+        quantize_extras = args.quantize_extras
+
         pipe = compile_pipe(
             pipe,
             ignores=compile_ignores,
@@ -207,7 +215,13 @@ def main():
             memory_format=memory_format,
             quantize=args.quantize,
             quantize_config=quantize_config,
+            quantize_extras=quantize_extras,
         )
+
+    if args.execution_device is not None:
+        pipe.to(args.execution_device)
+    if args.execution_dtype is not None:
+        pipe.to(getattr(torch, args.execution_dtype))
 
     core_net = None
     if core_net is None:
