@@ -172,8 +172,6 @@ def main():
     device = torch.device(args.device)
 
     if use_ddp:
-        assert device.type == "cuda", "Model should be loaded on CUDA device"
-
         piflux.config.sync_steps = args.sync_steps
 
         piflux.setup()
