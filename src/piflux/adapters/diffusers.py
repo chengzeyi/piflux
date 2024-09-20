@@ -10,8 +10,9 @@ import torch
 
 from diffusers import DiffusionPipeline, FluxTransformer2DModel
 
-from piflux.mode import DistributedAttentionMode
 from piflux import context
+
+from piflux.mode import DistributedAttentionMode
 
 piflux_ops = torch.ops.piflux
 
@@ -42,10 +43,12 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
             controlnet_block_samples = [
                 piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_block_samples
             ]
+            kwargs["controlnet_block_samples"] = controlnet_block_samples
         if controlnet_single_block_samples is not None:
             controlnet_single_block_samples = [
                 piflux_ops.get_assigned_chunk(sample, dim=-2) for sample in controlnet_single_block_samples
             ]
+            kwargs["controlnet_single_block_samples"] = controlnet_single_block_samples
 
         with DistributedAttentionMode():
             output = original_forward(
@@ -54,8 +57,6 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
                 *args,
                 img_ids=img_ids,
                 txt_ids=txt_ids,
-                controlnet_block_samples=controlnet_block_samples,
-                controlnet_single_block_samples=controlnet_single_block_samples,
                 **kwargs,
             )
         return_dict = not isinstance(output, tuple)
