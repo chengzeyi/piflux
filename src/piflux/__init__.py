@@ -3,10 +3,8 @@ import torch.distributed as dist
 from . import adapters, config, ops  # noqa: F401
 
 
-def setup() -> None:
-    world_size = config.world_size
-
-    dist.init_process_group(backend=config.dist.backend, world_size=world_size)
+def setup(**kwargs) -> None:
+    dist.init_process_group(backend=config.dist.backend, world_size=config.dist.world_size, **kwargs)
 
 
 def cleanup() -> None:

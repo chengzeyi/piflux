@@ -23,7 +23,6 @@ OUTPUT = None
 EXTRA_CALL_KWARGS = None
 FPS = 10
 
-WORLD_SIZE = None
 SYNC_STEPS = 1
 
 COMPILE_IGNORES = []
@@ -76,7 +75,7 @@ def parse_args():
     parser.add_argument("--output", type=str, default=OUTPUT)
     parser.add_argument("--print-output", action="store_true")
     parser.add_argument("--display-output", action="store_true")
-    parser.add_argument("--world-size", type=int, default=WORLD_SIZE)
+    parser.add_argument("--disable-ddp", action="store_true")
     parser.add_argument("--sync-steps", type=int, default=SYNC_STEPS)
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--compile-ignores", type=str, nargs="*", default=COMPILE_IGNORES)
@@ -158,7 +157,7 @@ class IterationProfiler:
 def main():
     args = parse_args()
 
-    use_ddp = args.world_size is None or args.world_size != 0
+    use_ddp = not args.disable_ddp
 
     if args.pipeline_class is None:
         if args.input_image is None:
