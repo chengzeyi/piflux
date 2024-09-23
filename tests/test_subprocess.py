@@ -13,22 +13,25 @@ if torch.cuda.device_count() < 2:
 if not importlib.util.find_spec("diffusers"):
     pytest.skip("diffusers is not available", allow_module_level=True)
 
+import dataclasses
 import os
 import pickle
 import socket
 from contextlib import closing
-from typing import Dict, Any
-import dataclasses
+from datetime import timedelta
+from typing import Any, Dict
+
+import piflux
+import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from diffusers import DiffusionPipeline
-import piflux
 from piflux.utils.term_image import print_image
 
 
 def find_free_port():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(('', 0))
+        s.bind(("", 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
@@ -36,6 +39,7 @@ def find_free_port():
 @dataclasses.dataclass
 class SharedValue:
     input_kwargs: Dict[str, Any]
+    debug_raise_exception: bool = dataclasses.field(default=False)
 
 
 def load_pipe():
@@ -67,8 +71,23 @@ def call_pipe(
     return output
 
 
-def worker(barrier, array_size, shared_array, input_queue=None, output_queue=None):
-    with torch.cuda.device(piflux.get_rank()):
+def worker(
+    rank,
+    barrier,
+    array_size,
+    shared_array,
+    has_error,
+    input_queue=None,
+    output_queue=None,
+):
+    piflux.config.dist.world_size = 2
+
+    def init_piflux():
+        piflux.setup(rank=rank, timeout=timedelta(seconds=10))
+
+    init_piflux()
+
+    with torch.cuda.device(rank):
         pipe = load_pipe()
         piflux.adapters.diffusers.patch_pipe(pipe)
         while True:
@@ -85,55 +104,109 @@ def worker(barrier, array_size, shared_array, input_queue=None, output_queue=Non
             value_bytes = shared_array[:data_size]
             value = pickle.loads(value_bytes)
             input_kwargs = value.input_kwargs
-            output = call_pipe(pipe, **input_kwargs)
+            debug_raise_exception = value.debug_raise_exception
+            try:
+                if debug_raise_exception:
+                    raise RuntimeError("Debug exception")
+                output = call_pipe(pipe, **input_kwargs)
+            except Exception as e:
+                output = e
             if output_queue is not None:
                 output_queue.put(output)
+            if isinstance(output, Exception):
+                with has_error.get_lock():
+                    has_error.value = 1
+            barrier.wait()
+            if bool(has_error.value):
+                dist.destroy_process_group()
+                init_piflux()
+                barrier.wait()
+                if piflux.is_master(rank):
+                    has_error.value = 0
 
 
-def init_process(rank, barrier, array_size, shared_array, input_queue, output_queue):
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(find_free_port())
-    piflux.config.dist.world_size = 2
-    piflux.setup(rank=rank)
+def init_process(
+    rank,
+    barrier,
+    array_size,
+    shared_array,
+    has_error,
+    input_queue,
+    output_queue,
+):
     try:
-        if not piflux.is_master():
+        if not piflux.is_master(rank):
             input_queue, output_queue = None, None
-        worker(barrier, array_size, shared_array, input_queue, output_queue)
+        worker(
+            rank,
+            barrier,
+            array_size,
+            shared_array,
+            has_error,
+            input_queue,
+            output_queue,
+        )
     finally:
         piflux.cleanup()
 
 
+def call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=None, debug_raise_exception=False):
+    input_kwargs = input_kwargs or {}
+    data = pickle.dumps(SharedValue(input_kwargs, debug_raise_exception))
+    data_size = len(data)
+    array_size.value = data_size
+    shared_array[:data_size] = data
+    input_queue.put(True)
+    output = output_queue.get()
+    if isinstance(output, Exception):
+        assert debug_raise_exception
+    else:
+        assert not debug_raise_exception
+        for image in output.images:
+            print_image(image, max_width=60)
+
+
 def test_subprocess():
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(find_free_port())
+
     num_workers = 2
     mp.set_start_method("spawn")
     barrier = mp.Barrier(num_workers)
     array_size = mp.Value("i", 0)
     shared_array = mp.Array("c", 1 << 30, lock=False)
+    has_error = mp.Value("i", 0)
     input_queue = mp.Queue()
     output_queue = mp.Queue()
     processes = []
     try:
         for rank in range(num_workers):
-            process = mp.Process(target=init_process, args=(rank, barrier, array_size, shared_array, input_queue, output_queue))
+            process = mp.Process(
+                target=init_process,
+                args=(
+                    rank,
+                    barrier,
+                    array_size,
+                    shared_array,
+                    has_error,
+                    input_queue,
+                    output_queue,
+                ),
+            )
             process.start()
             processes.append(process)
 
-        data = {
+        input_kwargs = {
             "prompt": "A cat holding a sign that says hello world",
             "num_inference_steps": 28,
             "height": 1024,
             "width": 1024,
             "seed": 0,
         }
-        data = pickle.dumps(SharedValue(data))
-        data_size = len(data)
-        assert data_size <= len(shared_array)
-        array_size.value = data_size
-        shared_array[:data_size] = data
-        input_queue.put(True)
-        output = output_queue.get()
-        for image in output.images:
-            print_image(image, max_width=60)
+
+        call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
+        call_once(array_size, shared_array, input_queue, output_queue, debug_raise_exception=True)
+        call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
 
         array_size.value = 0
         input_queue.put(None)

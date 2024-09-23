@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch.distributed as dist
 
 from . import adapters, config, ops  # noqa: F401
@@ -19,5 +21,7 @@ def get_rank() -> int:
     return dist.get_rank()
 
 
-def is_master() -> bool:
-    return get_rank() == 0
+def is_master(rank: Optional[int] = None) -> bool:
+    if rank is None:
+        rank = get_rank()
+    return rank == 0
