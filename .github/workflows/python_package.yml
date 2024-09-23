@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: write-all
 
-    timeout-minutes: 360
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
