@@ -105,19 +105,28 @@ def worker(
             value = pickle.loads(value_bytes)
             input_kwargs = value.input_kwargs
             debug_raise_exception = value.debug_raise_exception
+            output = None
+            exception = None
             try:
                 if debug_raise_exception:
                     raise RuntimeError("Debug exception")
                 output = call_pipe(pipe, **input_kwargs)
             except Exception as e:
-                output = e
-            if output_queue is not None:
-                output_queue.put(output)
-            if isinstance(output, Exception):
+                exception = e
+            if exception is not None:
+                print(f"Rank {rank} failed with exception: {output}")
                 with has_error.get_lock():
                     has_error.value = 1
             barrier.wait()
+            if output_queue is not None:
+                if output is not None:
+                    output_queue.put(output)
+                elif exception is not None:
+                    output_queue.put(exception)
+                else:
+                    raise RuntimeError("No output or exception")
             if bool(has_error.value):
+                print(f"Rank {rank} restarting")
                 dist.destroy_process_group()
                 init_piflux()
                 barrier.wait()
@@ -160,6 +169,7 @@ def call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=
     output = output_queue.get()
     if isinstance(output, Exception):
         assert debug_raise_exception
+        print(f"Exception: {output}")
     else:
         assert not debug_raise_exception
         for image in output.images:
