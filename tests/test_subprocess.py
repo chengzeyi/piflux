@@ -108,7 +108,7 @@ def worker(
             output = None
             exception = None
             try:
-                if debug_raise_exception:
+                if debug_raise_exception and piflux.is_master(rank):
                     raise RuntimeError("Debug exception")
                 output = call_pipe(pipe, **input_kwargs)
             except Exception as e:
