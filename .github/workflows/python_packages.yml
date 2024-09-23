@@ -1,4 +1,4 @@
-name: wheels
+name: python_packages
 
 on:
   # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#running-a-workflow-when-a-pull-request-is-approved
@@ -7,10 +7,6 @@ on:
   #     - review_requested
   #   branches:
   #     - main
-  #   # paths:
-  #   #   - ".github/workflows/wheel*"
-  #   #   - "setup.py"
-  #   #   - "requirements*.txt"
   push:
     branches:
       - main
@@ -34,6 +30,14 @@ jobs:
         pip install build
     - name: Build package
       run: python -m build
+
+    - run: du -h dist/*
+    - uses: actions/upload-artifact@v3
+      with:
+        name: python-packages
+        path: |
+          dist/*/*.whl
+          dist/*/*.tar.gz
 
   # publish to GitHub Release
   gh_release:
