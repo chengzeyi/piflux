@@ -114,7 +114,7 @@ def worker(
             except Exception as e:
                 exception = e
             if exception is not None:
-                print(f"Rank {rank} failed with exception: {output}")
+                print(f"Rank {rank} failed with exception: {exception}")
                 with has_error.get_lock():
                     has_error.value = 1
             barrier.wait()
