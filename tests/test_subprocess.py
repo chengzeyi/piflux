@@ -128,8 +128,8 @@ def worker(
             if bool(has_error.value):
                 print(f"Rank {rank} restarting")
                 dist.destroy_process_group()
-                init_piflux()
                 barrier.wait()
+                init_piflux()
                 if piflux.is_master(rank):
                     has_error.value = 0
 
