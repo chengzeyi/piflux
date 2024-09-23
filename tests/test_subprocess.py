@@ -110,11 +110,33 @@ def worker(
             try:
                 if debug_raise_exception and piflux.is_master(rank):
                     raise RuntimeError("Debug exception")
+            except Exception as e:
+                exception = e
+
+            if exception is not None:
+                print(f"Rank {rank} preparation failed with exception: {exception}")
+                with has_error.get_lock():
+                    has_error.value = 1
+
+            barrier.wait()
+            if bool(has_error.value):
+                if output_queue is not None:
+                    if exception is not None:
+                        output_queue.put(exception)
+                    else:
+                        output_queue.put(RuntimeError("Exception occurred"))
+                if piflux.is_master(rank):
+                    has_error.value = 0
+                continue
+
+            try:
+                if debug_raise_exception and piflux.is_master(rank):
+                    raise RuntimeError("Debug exception")
                 output = call_pipe(pipe, **input_kwargs)
             except Exception as e:
                 exception = e
             if exception is not None:
-                print(f"Rank {rank} failed with exception: {exception}")
+                print(f"Rank {rank} inference failed with exception: {exception}")
                 with has_error.get_lock():
                     has_error.value = 1
             barrier.wait()
@@ -159,14 +181,20 @@ def init_process(
         piflux.cleanup()
 
 
-def call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=None, debug_raise_exception=False):
+def call_once(
+    processes, array_size, shared_array, input_queue, output_queue, input_kwargs=None, debug_raise_exception=False
+):
+    for rank, process in enumerate(processes):
+        if not process.is_alive():
+            raise RuntimeError(f"Process {rank} is not alive")
+
     input_kwargs = input_kwargs or {}
     data = pickle.dumps(SharedValue(input_kwargs, debug_raise_exception))
     data_size = len(data)
     array_size.value = data_size
     shared_array[:data_size] = data
     input_queue.put(True)
-    output = output_queue.get()
+    output = output_queue.get(timeout=30)
     if isinstance(output, Exception):
         assert debug_raise_exception
         print(f"Exception: {output}")
@@ -214,9 +242,9 @@ def test_subprocess():
             "seed": 0,
         }
 
-        call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
-        call_once(array_size, shared_array, input_queue, output_queue, debug_raise_exception=True)
-        call_once(array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
+        call_once(processes, array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
+        call_once(processes, array_size, shared_array, input_queue, output_queue, debug_raise_exception=True)
+        call_once(processes, array_size, shared_array, input_queue, output_queue, input_kwargs=input_kwargs)
 
         array_size.value = 0
         input_queue.put(None)
