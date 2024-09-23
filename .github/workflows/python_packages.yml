@@ -36,8 +36,8 @@ jobs:
       with:
         name: python-packages
         path: |
-          dist/*/*.whl
-          dist/*/*.tar.gz
+          dist/*.whl
+          dist/*.tar.gz
 
   # publish to GitHub Release
   gh_release:
