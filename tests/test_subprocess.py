@@ -22,7 +22,6 @@ from datetime import timedelta
 from typing import Any, Dict
 
 import piflux
-import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from diffusers import DiffusionPipeline
@@ -85,6 +84,9 @@ def worker(
     def init_piflux():
         piflux.setup(rank=rank, timeout=timedelta(seconds=10))
 
+    def cleanup_piflux():
+        piflux.cleanup()
+
     init_piflux()
 
     with torch.cuda.device(rank):
@@ -125,6 +127,7 @@ def worker(
                         output_queue.put(exception)
                     else:
                         output_queue.put(RuntimeError("Exception occurred"))
+                barrier.wait()
                 if piflux.is_master(rank):
                     has_error.value = 0
                 continue
@@ -149,9 +152,9 @@ def worker(
                     raise RuntimeError("No output or exception")
             if bool(has_error.value):
                 print(f"Rank {rank} restarting")
-                dist.destroy_process_group()
-                barrier.wait()
+                cleanup_piflux()
                 init_piflux()
+                barrier.wait()
                 if piflux.is_master(rank):
                     has_error.value = 0
 
