@@ -15,10 +15,14 @@ Repository = "https://github.com/chengzeyi/piflux"
 
 [build-system]
 
-requires = ["setuptools>=64", "setuptools_scm>=8"]
+requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
 # build-backend = "setuptools.build_meta"
 
 [tool.black]
 
 line-length = 120
 target-version = ["py38"]
+
+[tool.setuptools_scm]
+
+write_to = "src/piflux/_version.py"
