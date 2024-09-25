@@ -92,6 +92,9 @@ def worker(
     with torch.cuda.device(rank):
         pipe = load_pipe()
         piflux.adapters.diffusers.patch_pipe(pipe)
+        barrier.wait()
+        if output_queue is not None:
+            output_queue.put(True)
         while True:
             if input_queue is None:
                 barrier.wait()
@@ -245,6 +248,8 @@ def test_subprocess():
             )
             process.start()
             processes.append(process)
+
+        output_queue.get(timeout=300)
 
         input_kwargs = {
             "prompt": "A cat holding a sign that says hello world",
