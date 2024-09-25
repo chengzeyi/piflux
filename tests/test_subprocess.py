@@ -185,11 +185,14 @@ def init_process(
 
 
 def call_once(
-    processes, array_size, shared_array, input_queue, output_queue, input_kwargs=None, debug_raise_exception=False
+    processes,
+    array_size,
+    shared_array,
+    input_queue,
+    output_queue,
+    input_kwargs=None,
+    debug_raise_exception=False,
 ):
-    for rank, process in enumerate(processes):
-        if not process.is_alive():
-            raise RuntimeError(f"Process {rank} is not alive")
 
     input_kwargs = input_kwargs or {}
     data = pickle.dumps(SharedValue(input_kwargs, debug_raise_exception))
@@ -197,7 +200,13 @@ def call_once(
     array_size.value = data_size
     shared_array[:data_size] = data
     input_queue.put(True)
-    output = output_queue.get(timeout=30)
+    try:
+        output = output_queue.get(timeout=30)
+    except Exception:
+        for rank, process in enumerate(processes):
+            if not process.is_alive():
+                raise RuntimeError(f"Process {rank} is not alive")
+        raise
     if isinstance(output, Exception):
         assert debug_raise_exception
         print(f"Exception: {output}")
