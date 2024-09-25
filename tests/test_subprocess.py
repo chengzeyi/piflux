@@ -214,7 +214,7 @@ def test_subprocess():
     num_workers = 2
     mp.set_start_method("spawn")
     barrier = mp.Barrier(num_workers)
-    array_size = mp.Value("i", 0)
+    array_size = mp.Value("i", 0, lock=False)
     shared_array = mp.Array("c", 1 << 30, lock=False)
     has_error = mp.Value("i", 0)
     input_queue = mp.Queue()
