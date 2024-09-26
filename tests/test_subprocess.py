@@ -155,6 +155,7 @@ def worker(
                     raise RuntimeError("No output or exception")
             if bool(has_error.value):
                 print(f"Rank {rank} restarting")
+                barrier.wait()
                 cleanup_piflux()
                 init_piflux()
                 barrier.wait()

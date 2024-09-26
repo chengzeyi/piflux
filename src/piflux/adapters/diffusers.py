@@ -81,14 +81,14 @@ def patch_pipe(pipe: DiffusionPipeline, shallow_patch: bool = False) -> None:
 
     @functools.wraps(original_call)
     def new_call(self, *args, generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None, **kwargs):
-        if generator is None:
-            seed = torch.seed()
-            seed_t = torch.full([1], seed, dtype=torch.int64)
-            seed_t = piflux_ops.get_complete_tensor(seed_t, dim=0)
-            seed_t = piflux_ops.get_assigned_chunk(seed_t, dim=0, idx=0)
-            generator = torch.Generator(self.device).manual_seed(seed_t.item())
         ctx = context.create_context()
         with context.patch_current_context(ctx):
+            if generator is None:
+                seed = torch.seed()
+                seed_t = torch.full([1], seed, dtype=torch.int64)
+                seed_t = piflux_ops.get_complete_tensor(seed_t, dim=0)
+                seed_t = piflux_ops.get_assigned_chunk(seed_t, dim=0, idx=0)
+                generator = torch.Generator(self.device).manual_seed(seed_t.item())
             return original_call(self, *args, generator=generator, **kwargs)
 
     pipe.__class__.__call__ = new_call
