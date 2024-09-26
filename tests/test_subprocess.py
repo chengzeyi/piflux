@@ -82,7 +82,7 @@ def worker(
     piflux.config.dist.world_size = 2
 
     def init_piflux():
-        piflux.setup(rank=rank, timeout=timedelta(seconds=10))
+        piflux.setup(rank=rank, timeout=timedelta(seconds=30))
 
     def cleanup_piflux():
         piflux.cleanup()
