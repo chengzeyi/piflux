@@ -17,7 +17,7 @@ from piflux.mode import DistributedAttentionMode
 piflux_ops = torch.ops.piflux
 
 
-def patch_transformer(transformer: FluxTransformer2DModel) -> None:
+def patch_transformer(transformer: FluxTransformer2DModel, shallow_patch: bool = False) -> None:
     assert isinstance(transformer, FluxTransformer2DModel)
 
     original_forward = transformer.forward
@@ -74,9 +74,8 @@ def patch_transformer(transformer: FluxTransformer2DModel) -> None:
     transformer.forward = new_forward
 
 
-def patch_pipe(pipe: DiffusionPipeline) -> None:
+def patch_pipe(pipe: DiffusionPipeline, shallow_patch: bool = False) -> None:
     assert isinstance(pipe, DiffusionPipeline)
-    patch_transformer(pipe.transformer)
 
     original_call = pipe.__class__.__call__
 
@@ -93,3 +92,6 @@ def patch_pipe(pipe: DiffusionPipeline) -> None:
             return original_call(self, *args, generator=generator, **kwargs)
 
     pipe.__class__.__call__ = new_call
+
+    if not shallow_patch:
+        patch_transformer(pipe.transformer)
