@@ -4,7 +4,7 @@ except ImportError:
     raise ImportError("diffusers is not installed. Install it by `pip3 install diffusers`")
 
 import functools
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 
@@ -78,21 +78,16 @@ def patch_pipe(pipe: DiffusionPipeline) -> None:
     assert isinstance(pipe, DiffusionPipeline)
     patch_transformer(pipe.transformer)
 
-    original_prepare_latents = pipe.prepare_latents
-
-    @functools.wraps(pipe.prepare_latents.__func__)
-    def new_prepare_latents(self, *args, **kwargs):
-        latents, latent_image_ids = original_prepare_latents(*args, **kwargs)
-        latents = piflux_ops.get_complete_tensor(latents, dim=0)
-        latents = piflux_ops.get_assigned_chunk(latents, dim=0, idx=0)
-        return latents, latent_image_ids
-
-    pipe.prepare_latents = new_prepare_latents.__get__(pipe)
-
     original_call = pipe.__class__.__call__
 
     @functools.wraps(original_call)
-    def new_call(self, *args, **kwargs):
+    def new_call(self, *args, generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None, **kwargs):
+        if generator is None:
+            seed = torch.seed()
+            seed_t = torch.full([1], seed, dtype=torch.int64)
+            seed_t = piflux_ops.get_complete_tensor(seed_t, dim=0)
+            seed_t = piflux_ops.get_assigned_chunk(seed_t, dim=0, idx=0)
+            generator = torch.Generator(self.device).manual_seed(seed_t.item())
         ctx = context.create_context()
         with context.patch_current_context(ctx):
             return original_call(self, *args, **kwargs)
