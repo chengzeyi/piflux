@@ -90,6 +90,6 @@ def patch_pipe(pipe: DiffusionPipeline) -> None:
             generator = torch.Generator(self.device).manual_seed(seed_t.item())
         ctx = context.create_context()
         with context.patch_current_context(ctx):
-            return original_call(self, *args, **kwargs)
+            return original_call(self, *args, generator=generator, **kwargs)
 
     pipe.__class__.__call__ = new_call
