@@ -172,9 +172,9 @@ def init_process(
     input_queue,
     output_queue,
 ):
+    if not piflux.is_master(rank):
+        input_queue, output_queue = None, None
     try:
-        if not piflux.is_master(rank):
-            input_queue, output_queue = None, None
         worker(
             rank,
             barrier,
