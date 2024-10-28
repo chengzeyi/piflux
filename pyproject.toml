@@ -22,7 +22,3 @@ requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
 
 line-length = 120
 target-version = ["py38"]
-
-[tool.setuptools_scm]
-
-write_to = "src/piflux/_version.py"
