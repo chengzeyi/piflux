@@ -4,11 +4,12 @@ DTYPE = "bfloat16"
 DEVICE = "cuda"
 EXECUTION_DTYPE = None
 EXECUTION_DEVICE = None
-PIPELINE_CLASS = "FluxPipeline"
+PIPELINE_CLASS = None
 CUSTOM_PIPELINE = None
 SCHEDULER = None
 LORA = None
 CONTROLNET = None
+CONTROLNET_CLASS = "ControlNetModel"
 STEPS = 28
 PROMPT = "A cat holding a sign that says hello world"
 NEGATIVE_PROMPT = None
@@ -33,13 +34,15 @@ QUANTIZE_CONFIG = None
 QUANTIZE_EXTRAS = []
 
 import argparse
-import importlib
 import inspect
 import itertools
 import json
 import time
 
 import diffusers
+import diffusers.models
+import diffusers.pipelines
+import diffusers.schedulers
 import piflux
 
 import torch
@@ -60,6 +63,7 @@ def parse_args():
     parser.add_argument("--scheduler", type=str, default=SCHEDULER)
     parser.add_argument("--lora", type=str, default=LORA)
     parser.add_argument("--controlnet", type=str, default=CONTROLNET)
+    parser.add_argument("--controlnet-class", type=str, default=CONTROLNET_CLASS)
     parser.add_argument("--steps", type=int, default=STEPS)
     parser.add_argument("--prompt", type=str, default=PROMPT)
     parser.add_argument("--negative-prompt", type=str, default=NEGATIVE_PROMPT)
@@ -82,6 +86,7 @@ def parse_args():
     parser.add_argument("--compile-keeps", type=str, nargs="*", default=COMPILE_KEEPS)
     parser.add_argument("--compile-config", type=str, default=COMPILE_CONFIG)
     parser.add_argument("--fuse-qkv-projections", action="store_true")
+    parser.add_argument("--enable-vae-tiling", action="store_true")
     parser.add_argument("--memory-format", type=str, default=MEMORY_FORMAT)
     parser.add_argument("--quantize", action="store_true")
     parser.add_argument("--quantize-config", type=str, default=QUANTIZE_CONFIG)
@@ -98,6 +103,7 @@ def load_pipe(
     custom_pipeline=None,
     scheduler=None,
     lora=None,
+    controlnet_cls=None,
     controlnet=None,
 ):
     extra_kwargs = {}
@@ -108,13 +114,14 @@ def load_pipe(
     if dtype is not None:
         extra_kwargs["torch_dtype"] = dtype
     if controlnet is not None:
-        from diffusers import ControlNetModel
+        assert controlnet_cls is not None
+        controlnet_cls = getattr(diffusers.models, controlnet_cls)
 
-        controlnet = ControlNetModel.from_pretrained(controlnet, torch_dtype=torch.float16)
+        controlnet = controlnet_cls.from_pretrained(controlnet, torch_dtype=dtype)
         extra_kwargs["controlnet"] = controlnet
     pipe = pipeline_cls.from_pretrained(pipe, **extra_kwargs)
     if scheduler is not None:
-        scheduler_cls = getattr(importlib.import_module("diffusers"), scheduler)
+        scheduler_cls = getattr(diffusers.schedulers, scheduler)
         pipe.scheduler = scheduler_cls.from_config(pipe.scheduler.config)
     if lora is not None:
         pipe.load_lora_weights(lora)
@@ -165,7 +172,7 @@ def main():
         else:
             from diffusers import AutoPipelineForImage2Image as pipeline_cls
     else:
-        pipeline_cls = getattr(diffusers, args.pipeline_class)
+        pipeline_cls = getattr(diffusers.pipelines, args.pipeline_class)
 
     dtype = getattr(torch, args.dtype)
     device = torch.device(args.device)
@@ -186,6 +193,7 @@ def main():
         scheduler=args.scheduler,
         lora=args.lora,
         controlnet=args.controlnet,
+        controlnet_cls=args.controlnet_class,
     )
 
     if use_ddp:
@@ -209,6 +217,7 @@ def main():
             keeps=compile_keeps,
             config=compile_config,
             fuse_qkv_projections=args.fuse_qkv_projections,
+            enable_vae_tiling=args.enable_vae_tiling,
             memory_format=memory_format,
             quantize=args.quantize,
             quantize_config=quantize_config,
@@ -238,7 +247,6 @@ def main():
     if not widths:
         widths = [None]
 
-    torch.cuda.reset_peak_memory_stats()
     for height, width in itertools.product(heights, widths):
         print(f"Running with height={height}, width={width}")
         if args.input_image is None:
@@ -251,6 +259,7 @@ def main():
             if args.controlnet is None:
                 control_image = None
             else:
+                assert height is not None and width is not None
                 control_image = Image.new("RGB", (width, height))
                 draw = ImageDraw.Draw(control_image)
                 draw.ellipse((width // 4, height // 4, width // 4 * 3, height // 4 * 3), fill=(255, 255, 255))
@@ -262,7 +271,7 @@ def main():
         def get_kwarg_inputs():
             kwarg_inputs = dict(
                 prompt=args.prompt,
-                generator=None if args.seed is None else torch.Generator(device).manual_seed(args.seed),
+                generator=None if args.seed is None else torch.Generator(device=device).manual_seed(args.seed),
                 **(dict() if args.extra_call_kwargs is None else json.loads(args.extra_call_kwargs)),
                 **(dict() if height is None else {"height": height}),
                 **(dict() if width is None else {"width": width}),
@@ -279,10 +288,10 @@ def main():
             if input_image is not None:
                 kwarg_inputs["image"] = input_image
             if control_image is not None:
-                if input_image is None:
-                    kwarg_inputs["image"] = control_image
-                else:
+                if "control_image" in pipe_parameters:
                     kwarg_inputs["control_image"] = control_image
+                else:
+                    kwarg_inputs["image"] = control_image
             return kwarg_inputs
 
         # NOTE: Warm it up.
@@ -293,6 +302,8 @@ def main():
             for _ in range(args.warmups):
                 pipe(**get_kwarg_inputs())
             print("End warmup")
+
+        torch.cuda.reset_peak_memory_stats()
 
         # Let's see it!
         # Note: Progress bar might work incorrectly due to the async nature of CUDA.
@@ -335,21 +346,21 @@ def main():
             if iter_per_sec is not None:
                 print(f"Iterations per second: {iter_per_sec:.3f}")
 
-    if not use_ddp or piflux.is_master():
-        peak_mem = torch.cuda.max_memory_allocated()
-        print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
+        if not use_ddp or piflux.is_master():
+            peak_mem = torch.cuda.max_memory_reserved()
+            print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
 
-        if args.output is not None:
-            if hasattr(output, "images"):
-                output.images[0].save(args.output)
-            elif hasattr(output, "frames"):
-                from diffusers.utils import export_to_video
+    if args.output is not None:
+        if hasattr(output, "images"):
+            output.images[0].save(args.output)
+        elif hasattr(output, "frames"):
+            from diffusers.utils import export_to_video
 
-                export_to_video(output.frames[0], args.output, fps=args.fps)
-            else:
-                raise ValueError(f"Cannot handle the output type: {type(output)}")
+            export_to_video(output.frames[0], args.output, fps=args.fps)
         else:
-            print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
+            raise ValueError(f"Cannot handle the output type: {type(output)}")
+    else:
+        print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
 
     if use_ddp:
         piflux.cleanup()

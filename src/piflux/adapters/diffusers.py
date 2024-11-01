@@ -7,11 +7,9 @@ import functools
 from typing import List, Optional, Union
 
 import torch
-
 from diffusers import DiffusionPipeline, FluxTransformer2DModel
 
 from piflux import context
-
 from piflux.mode import DistributedAttentionMode
 
 piflux_ops = torch.ops.piflux
@@ -22,7 +20,7 @@ def patch_transformer(transformer: FluxTransformer2DModel, shallow_patch: bool =
 
     original_forward = transformer.forward
 
-    @functools.wraps(original_forward.__func__)
+    @functools.wraps(transformer.__class__.forward)
     @torch.compiler.disable(recursive=False)
     def new_forward(
         self,
@@ -59,13 +57,11 @@ def patch_transformer(transformer: FluxTransformer2DModel, shallow_patch: bool =
                 txt_ids=txt_ids,
                 **kwargs,
             )
+
         return_dict = not isinstance(output, tuple)
         sample = output[0]
-
         sample = piflux_ops.get_complete_tensor(sample, dim=-2)
-
         sample = piflux_ops.next_step(sample)
-
         if return_dict:
             return output.__class__(sample, *output[1:])
         return (sample, *output[1:])
