@@ -16,6 +16,9 @@ class DistributedAttentionMode(TorchFunctionMode):
             assert (
                 attn_mask is None
             ), "attn_mask is not supported in DistributedAttentionMode for scaled_dot_product_attention"
+            assert (
+                is_causal is None or is_causal is False
+            ), "is_causal is not supported in DistributedAttentionMode for scaled_dot_product_attention"
 
             key = piflux_ops.get_complete_tensor(key, dim=-2, enable_cache=True)
             value = piflux_ops.get_complete_tensor(value, dim=-2, enable_cache=True)
