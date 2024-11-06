@@ -15,7 +15,7 @@ git clone https://github.com/chengzeyi/piflux.git
 cd piflux
 git submodule update --init --recursive
 
-pip3 install packaging wheel 'setuptools>=64,<70' 'setuptools_scm>=8'
+pip3 install 'setuptools>=64,<70' 'setuptools_scm>=8'
 
 pip3 install -e '.[dev]'
 
