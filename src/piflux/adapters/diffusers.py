@@ -1,7 +1,7 @@
-try:
-    import diffusers  # noqa: F401
-except ImportError:
-    raise ImportError("diffusers is not installed. Install it by `pip3 install diffusers`")
+import importlib
+
+if not importlib.util.find_spec("diffusers"):
+    raise ImportError("diffusers is not available, please install it by `pip3 install diffusers`")
 
 import functools
 from typing import List, Optional, Union
@@ -15,13 +15,12 @@ from piflux.mode import DistributedAttentionMode
 piflux_ops = torch.ops.piflux
 
 
-def patch_transformer(transformer: FluxTransformer2DModel, shallow_patch: bool = False) -> None:
+def patch_transformer(transformer: FluxTransformer2DModel) -> None:
     assert isinstance(transformer, FluxTransformer2DModel)
 
     original_forward = transformer.forward
 
     @functools.wraps(transformer.__class__.forward)
-    @torch.compiler.disable(recursive=False)
     def new_forward(
         self,
         hidden_states: torch.Tensor,
@@ -70,7 +69,7 @@ def patch_transformer(transformer: FluxTransformer2DModel, shallow_patch: bool =
     transformer.forward = new_forward
 
 
-def patch_pipe(pipe: DiffusionPipeline, shallow_patch: bool = False) -> None:
+def patch_pipe(pipe: DiffusionPipeline, *, shallow_patch: bool = False) -> None:
     assert isinstance(pipe, DiffusionPipeline)
 
     original_call = pipe.__class__.__call__
@@ -81,10 +80,13 @@ def patch_pipe(pipe: DiffusionPipeline, shallow_patch: bool = False) -> None:
         with context.patch_current_context(ctx):
             if generator is None:
                 seed = torch.seed()
-                seed_t = torch.full([1], seed, dtype=torch.int64)
+                seed += torch.iinfo(torch.int64).min
+                seed_t = torch.full([1], seed, dtype=torch.int64, device=self.device)
                 seed_t = piflux_ops.get_complete_tensor(seed_t, dim=0)
                 seed_t = piflux_ops.get_assigned_chunk(seed_t, dim=0, idx=0)
-                generator = torch.Generator(self.device).manual_seed(seed_t.item())
+                seed = seed_t.item()
+                seed -= torch.iinfo(torch.int64).min
+                generator = torch.Generator(self.device).manual_seed(seed)
             return original_call(self, *args, generator=generator, **kwargs)
 
     pipe.__class__.__call__ = new_call

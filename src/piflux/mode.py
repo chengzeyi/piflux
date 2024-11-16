@@ -5,6 +5,10 @@ piflux_ops = torch.ops.piflux
 
 
 class DistributedAttentionMode(TorchFunctionMode):
+    @torch.compiler.disable()
+    def __init__(self):
+        super().__init__()
+
     def __torch_function__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
 
@@ -36,6 +40,14 @@ class DistributedAttentionMode(TorchFunctionMode):
             return func(*args, **kwargs)
 
         return func(*args, **kwargs)
+
+    @torch.compiler.disable()
+    def __enter__(self):
+        super().__enter__()
+
+    @torch.compiler.disable()
+    def __exit__(self, *args):
+        super().__exit__(*args)
 
 
 def get_arg(args, kwargs, *field):
