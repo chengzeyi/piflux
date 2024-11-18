@@ -75,7 +75,7 @@ def get_complete_tensor(
     if not enable_cache or ctx.is_sync_step:
         gathered_tensors = list(output_tensor.chunk(world_size, dim=0))
         gathered_tensors = (
-            gathered_tensors[world_size - master_offset :] + gathered_tensors[: world_size - master_offset]
+            gathered_tensors[master_offset:] + gathered_tensors[:master_offset]
         )
         dist.all_gather(gathered_tensors, tensor.contiguous())
     else:

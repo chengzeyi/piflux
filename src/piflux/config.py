@@ -11,11 +11,6 @@ _save_config_ignore = {
 sync_steps = int(os.environ.get("PIFLUX_SYNC_STEPS", "1"))
 
 
-class dist:
-    backend = os.environ.get("PIFLUX_DIST_BACKEND")
-    world_size = int(os.environ.get("PIFLUX_WORLD_SIZE", "-1"))
-
-
 try:
     from torch.utils._config_module import install_config_module
 except ImportError:

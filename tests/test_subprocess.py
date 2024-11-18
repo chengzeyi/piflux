@@ -20,10 +20,9 @@ import socket
 from contextlib import closing
 from datetime import timedelta
 from typing import Any, Dict
-
 import piflux
 import torch.multiprocessing as mp
-
+import torch.distributed as dist
 from diffusers import DiffusionPipeline
 from piflux.utils.term_image import print_image
 
@@ -79,13 +78,11 @@ def worker(
     input_queue=None,
     output_queue=None,
 ):
-    piflux.config.dist.world_size = 2
-
     def init_piflux():
-        piflux.setup(rank=rank, timeout=timedelta(seconds=30))
+        dist.init_process_group(world_size=2, rank=rank, timeout=timedelta(seconds=30))
 
     def cleanup_piflux():
-        piflux.cleanup()
+        dist.destroy_process_group()
 
     init_piflux()
 
@@ -113,7 +110,7 @@ def worker(
             output = None
             exception = None
             try:
-                if debug_raise_exception and piflux.is_master(rank):
+                if debug_raise_exception and rank == 0:
                     raise RuntimeError("Debug exception")
             except Exception as e:
                 exception = e
@@ -131,12 +128,12 @@ def worker(
                     else:
                         output_queue.put(RuntimeError("Exception occurred"))
                 barrier.wait()
-                if piflux.is_master(rank):
+                if rank == 0:
                     has_error.value = 0
                 continue
 
             try:
-                if debug_raise_exception and piflux.is_master(rank):
+                if debug_raise_exception and rank == 0:
                     raise RuntimeError("Debug exception")
                 output = call_pipe(pipe, **input_kwargs)
             except Exception as e:
@@ -159,7 +156,7 @@ def worker(
                 cleanup_piflux()
                 init_piflux()
                 barrier.wait()
-                if piflux.is_master(rank):
+                if rank == 0:
                     has_error.value = 0
 
 
@@ -172,7 +169,7 @@ def init_process(
     input_queue,
     output_queue,
 ):
-    if not piflux.is_master(rank):
+    if rank != 0:
         input_queue, output_queue = None, None
     try:
         worker(

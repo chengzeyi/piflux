@@ -44,8 +44,8 @@ import diffusers.models
 import diffusers.pipelines
 import diffusers.schedulers
 import piflux
-
 import torch
+import torch.distributed as dist
 from diffusers.utils import load_image
 from PIL import Image, ImageDraw
 
@@ -180,8 +180,8 @@ def main():
     if use_ddp:
         piflux.config.sync_steps = args.sync_steps
 
-        piflux.setup()
-        device = torch.device("cuda", piflux.get_rank())
+        dist.init_process_group()
+        device = torch.device("cuda", dist.get_rank())
 
     pipe = load_pipe(
         pipeline_cls,
@@ -315,7 +315,7 @@ def main():
         output = pipe(**kwarg_inputs)
         end = time.time()
 
-        if not use_ddp or piflux.is_master():
+        if not use_ddp or dist.get_rank() == 0:
             if hasattr(output, "images"):
                 output_images = output.images
                 if args.print_output:
@@ -346,7 +346,7 @@ def main():
             if iter_per_sec is not None:
                 print(f"Iterations per second: {iter_per_sec:.3f}")
 
-        if not use_ddp or piflux.is_master():
+        if not use_ddp or dist.get_rank() == 0:
             peak_mem = torch.cuda.max_memory_reserved()
             print(f"Peak memory: {peak_mem / 1024**3:.3f}GiB")
 
@@ -363,7 +363,7 @@ def main():
         print("Please set `--output-image` to save the output image, the terminal preview is inaccurate.")
 
     if use_ddp:
-        piflux.cleanup()
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import DefaultDict, Dict, List, Optional, Tuple, Union
 
 import torch
+import torch.distributed as dist
 
 import piflux
 
@@ -128,8 +129,8 @@ class ParallelContext:
 
 
 def create_context() -> ParallelContext:
-    world_size = piflux.get_world_size()
-    rank = piflux.get_rank()
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
 
     return ParallelContext(world_size=world_size, rank=rank, sync_steps=piflux.config.sync_steps)
 
